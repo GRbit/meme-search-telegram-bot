@@ -391,32 +391,50 @@ func TestMask(t *testing.T) {
 	}
 }
 
-// TestEveryDocumentedVarIsInTable keeps docs/plan.md and the table in sync.
-func TestEveryDocumentedVarIsInTable(t *testing.T) {
-	plan, err := os.ReadFile("../docs/plan.md")
+// TestExamplesCoverTable keeps the shipped examples in sync with the table:
+// every setting is documented in .env.example and config.example.yml, and the
+// example file loads as is, yielding the defaults.
+func TestExamplesCoverTable(t *testing.T) {
+	envExample, err := os.ReadFile("../.env.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(plan)
-	start := strings.Index(text, "Variables (default):")
-	if start < 0 {
-		t.Fatal("docs/plan.md has no \"Variables (default):\" paragraph")
+	for _, s := range append([]setting{{env: envConfigFile}}, settings...) {
+		if !regexp.MustCompile(`(?m)^#?\s*` + s.env + `=`).Match(envExample) {
+			t.Errorf(".env.example does not document %s", s.env)
+		}
 	}
-	para := text[start:]
-	if end := strings.Index(para, "\n\n"); end > 0 {
-		para = para[:end]
+
+	ymlExample, err := os.ReadFile("../config.example.yml")
+	if err != nil {
+		t.Fatal(err)
 	}
-	known := map[string]bool{envConfigFile: true}
 	for _, s := range settings {
-		known[s.env] = true
+		leaf := s.key[strings.LastIndex(s.key, ".")+1:]
+		if !regexp.MustCompile(`(?m)^\s*#?\s*` + leaf + `:`).Match(ymlExample) {
+			t.Errorf("config.example.yml does not document %s", s.key)
+		}
 	}
-	vars := regexp.MustCompile("`([A-Z][A-Z0-9_]+)`").FindAllStringSubmatch(para, -1)
-	if len(vars) < 20 {
-		t.Fatalf("found only %d variables in plan paragraph, parser broken?", len(vars))
+
+	exe := t.TempDir()
+	env := []string{
+		envConfigFile + "=../config.example.yml",
+		"TELEGRAM_BOT_TOKEN=t", "MEME_SEARCH_URL=http://x", "MEME_SEARCH_API_TOKEN=t",
 	}
-	for _, m := range vars {
-		if !known[m[1]] {
-			t.Errorf("%s is documented but not in the settings table", m[1])
+	got, err := Load(env, exe)
+	if err != nil {
+		t.Fatalf("example file does not load: %v", err)
+	}
+	want, err := Load(env[1:], exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range settings {
+		if s.secret || s.env == "MEME_SEARCH_URL" {
+			continue
+		}
+		if g, w := s.get(&got), s.get(&want); g != w {
+			t.Errorf("example file changes %s: %q, default %q", s.env, g, w)
 		}
 	}
 }
