@@ -197,3 +197,17 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
 - Stack 112: bot service from `docker-compose.meme-search.yml`, `dockerAppData/meme-search/memes` as `/memes`,
   SQLite in `dockerAppData/meme-search/telegram-bot/`.
 - Docs: `40-docker.md` row for stack 112, `30-services.md` if anything scheduled changes.
+
+## Implementation notes (deviations decided during the build)
+
+- `RESULTS_PER_PAGE=0` and other zero module settings mean the module default, not an error: module `Config`s
+  treat zero as "use the default" so hosts set only what they expose.
+- An expired "More" button answers with a callback popup ("search again"), not a chat message.
+- Access fails open: if the counter store errors, the search is allowed and the error logged at Error.
+- Inline limit denials use `cache_time` 1, because go-telegram/bot drops 0 and Telegram would cache the denial 300s.
+- The saver accepts jpg, png and webp only (the formats meme-search's uploader takes); a second "already saved"
+  reply covers duplicates inside the sender's own folder.
+- `srch:s:` is reserved but not charged until phase 4 implements "similar".
+- The Dockerfile declares only `VOLUME /data`: declaring `/memes` would silently create an anonymous volume when a
+  user forgets the bind mount, and saves would vanish with the container.
+- Extra setting `MEME_SEARCH_TIMEOUT` (default 30s).
