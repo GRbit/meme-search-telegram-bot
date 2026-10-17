@@ -97,13 +97,13 @@ var settings = []setting{
 	{env: "LIBRARY_DIR", key: "cache.library_dir",
 		set: func(c *Config, v string) error { c.Media.LibraryDir = v; return nil },
 		get: func(c *Config) string { return c.Media.LibraryDir }},
-	{env: "WARMUP_INTERVAL", key: "cache.warmup_interval", def: "6h",
+	{env: "WARMUP_INTERVAL", key: "cache.warmup_interval", field: "Media.WarmupInterval", def: "6h",
 		set: func(c *Config, v string) error { return parseDuration(v, &c.Media.WarmupInterval) },
 		get: func(c *Config) string { return c.Media.WarmupInterval.String() }},
-	{env: "CACHE_UPLOADS_PER_MIN", key: "cache.uploads_per_min", def: "20",
+	{env: "CACHE_UPLOADS_PER_MIN", key: "cache.uploads_per_min", field: "Media.UploadsPerMin", def: "20",
 		set: func(c *Config, v string) error { return parseInt(v, &c.Media.UploadsPerMin) },
 		get: func(c *Config) string { return strconv.Itoa(c.Media.UploadsPerMin) }},
-	{env: "WARMUP_UPLOADS_PER_MIN", key: "cache.warmup_uploads_per_min", def: "10",
+	{env: "WARMUP_UPLOADS_PER_MIN", key: "cache.warmup_uploads_per_min", field: "Media.WarmupUploadsPerMin", def: "10",
 		set: func(c *Config, v string) error { return parseInt(v, &c.Media.WarmupUploadsPerMin) },
 		get: func(c *Config) string { return strconv.Itoa(c.Media.WarmupUploadsPerMin) }},
 	{env: "SAVE_DIR", key: "saver.dir", field: "Saver.Dir", def: "memes", defRel: true,
@@ -345,22 +345,11 @@ func (c *Config) validate() error {
 	if c.TelegramToken == "" {
 		errs = append(errs, fieldErr("TELEGRAM_BOT_TOKEN", "required"))
 	}
-	if c.Media.WarmupInterval <= 0 {
-		errs = append(errs, fieldErr("WARMUP_INTERVAL", "must be positive, got %s", c.Media.WarmupInterval))
-	}
-	if c.Media.UploadsPerMin <= 0 {
-		errs = append(errs, fieldErr("CACHE_UPLOADS_PER_MIN", "must be positive, got %d", c.Media.UploadsPerMin))
-	}
-	if c.Media.WarmupUploadsPerMin <= 0 {
-		errs = append(errs, fieldErr("WARMUP_UPLOADS_PER_MIN", "must be positive, got %d", c.Media.WarmupUploadsPerMin))
-	} else if c.Media.WarmupUploadsPerMin > c.Media.UploadsPerMin && c.Media.UploadsPerMin > 0 {
-		errs = append(errs, fieldErr("WARMUP_UPLOADS_PER_MIN", "must not exceed CACHE_UPLOADS_PER_MIN (%d), got %d",
-			c.Media.UploadsPerMin, c.Media.WarmupUploadsPerMin))
-	}
 	if c.DefaultLang == "" {
 		errs = append(errs, fieldErr("DEFAULT_LANG", "must not be empty"))
 	}
 	errs = append(errs, moduleErrs("MemeSearch", c.MemeSearch.Validate())...)
+	errs = append(errs, moduleErrs("Media", c.Media.Validate())...)
 	errs = append(errs, moduleErrs("Search", c.Search.Validate())...)
 	errs = append(errs, moduleErrs("Access", c.Access.Validate())...)
 	errs = append(errs, moduleErrs("Saver", c.Saver.Validate())...)
