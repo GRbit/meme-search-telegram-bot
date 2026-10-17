@@ -471,7 +471,8 @@ func TestChargeable(t *testing.T) {
 		{"inline", inlineUpdate("cat"), true},
 		{"empty inline", inlineUpdate(" "), false},
 		{"paging", callbackUpdate(userID, "srch:m:tok:2"), false},
-		{"similar", callbackUpdate(userID, "srch:s:tok:1"), true},
+		// Not charged until phase 4 implements "similar": a no-op press must not burn quota.
+		{"similar (not implemented yet)", callbackUpdate(userID, "srch:s:tok:1"), false},
 		{"foreign callback", callbackUpdate(userID, "other:s:1"), false},
 		{"empty update", &models.Update{}, false},
 	} {
