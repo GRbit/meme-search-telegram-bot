@@ -1,6 +1,8 @@
 package memesearch
 
 import (
+	"github.com/grbit/meme-search-telegram-bot/configerr"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -480,5 +482,25 @@ func TestLogsNeverContainToken(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("log lacks %q: %s", want, out)
 		}
+	}
+}
+
+func TestConfigValidateNamesFields(t *testing.T) {
+	err := Config{URL: "https://u:p@x", Timeout: -time.Second}.Validate()
+	fields, rest := configerr.Fields(err)
+	if len(rest) != 0 {
+		t.Fatalf("non-field errors: %v", rest)
+	}
+	got := map[string]bool{}
+	for _, f := range fields {
+		got[f.Name] = true
+	}
+	for _, want := range []string{"URL", "Token", "Timeout"} {
+		if !got[want] {
+			t.Errorf("Validate did not reject %s: %v", want, err)
+		}
+	}
+	if err := (Config{URL: "http://x", Token: "t"}).Validate(); err != nil {
+		t.Errorf("zero timeout must be valid: %v", err)
 	}
 }

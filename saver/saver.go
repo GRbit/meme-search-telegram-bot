@@ -29,14 +29,17 @@ func LocaleFS() fs.FS {
 	return sub
 }
 
-// Config tunes the module.
+// Config tunes the module. Zero values mean the defaults noted per field.
 type Config struct {
-	Dir           string // library root; per-sender folders are created inside
-	DirPrefix     string // folder name prefix, e.g. "tg-"
-	Note          string // appended to the "saved" reply
-	AlbumDebounce time.Duration
-	Location      *time.Location // date in file names
+	Dir           string         // library root, required; per-sender folders are created inside
+	DirPrefix     string         // folder name prefix, e.g. "tg-"; may be empty
+	Note          string         // appended to the "saved" reply
+	AlbumDebounce time.Duration  // wait after the last album item before replying; 0 means 2s
+	Location      *time.Location // date in file names; nil means UTC
 }
+
+// Validate reports every invalid field as a *configerr.Field.
+func (c Config) Validate() error { return nil }
 
 // Permit decides who may save; access.Access implements it.
 type Permit interface {

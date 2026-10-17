@@ -57,11 +57,9 @@ func TestDefaults(t *testing.T) {
 	}
 	want.MemeSearch.URL = "https://memes.example.com"
 	want.MemeSearch.Token = "apitokenvalue"
-	want.MemeSearch.Timeout = 15 * time.Second
+	want.MemeSearch.Timeout = memesearch.DefaultTimeout
 	want.Search.ResultsPerPage = 5
 	want.Search.Mode = memesearch.ModeVector
-	want.Search.PageTTL = time.Hour
-	want.Search.InlineEnabled = false
 	want.Media.CacheChatID = 0
 	want.Media.LibraryDir = filepath.Join(exe, "memes")
 	want.Media.WarmupInterval = 6 * time.Hour
@@ -73,7 +71,6 @@ func TestDefaults(t *testing.T) {
 	want.Access.Location = time.UTC
 	want.Saver.Dir = filepath.Join(exe, "memes")
 	want.Saver.DirPrefix = "tg-"
-	want.Saver.AlbumDebounce = 2 * time.Second
 	want.Saver.Location = time.UTC
 
 	if !reflect.DeepEqual(c, want) {
@@ -129,7 +126,6 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		{"Media.WarmupUploadsPerMin", c.Media.WarmupUploadsPerMin, 30},
 		{"Search.ResultsPerPage", c.Search.ResultsPerPage, 10},
 		{"Search.Mode", c.Search.Mode, memesearch.ModeKeyword},
-		{"Search.InlineEnabled", c.Search.InlineEnabled, true},
 		{"Saver.Dir", c.Saver.Dir, "/save"},
 		{"Saver.DirPrefix", c.Saver.DirPrefix, "bot-"},
 		{"Saver.Note", c.Saver.Note, "see you"},
@@ -284,7 +280,9 @@ func TestValidation(t *testing.T) {
 		{"url scheme", env("MEME_SEARCH_URL=ftp://x"), "MEME_SEARCH_URL"},
 		{"url no host", env("MEME_SEARCH_URL=https://"), "MEME_SEARCH_URL"},
 		{"url garbage", env("MEME_SEARCH_URL=memes.example.com"), "MEME_SEARCH_URL"},
-		{"timeout zero", env("MEME_SEARCH_TIMEOUT=0s"), "MEME_SEARCH_TIMEOUT"},
+		{"url query", env("MEME_SEARCH_URL=https://x/?a=1"), "MEME_SEARCH_URL"},
+		{"url userinfo", env("MEME_SEARCH_URL=https://u:p@x"), "MEME_SEARCH_URL"},
+		{"timeout negative", env("MEME_SEARCH_TIMEOUT=-1s"), "MEME_SEARCH_TIMEOUT"},
 		{"rpp zero", env("RESULTS_PER_PAGE=0"), "RESULTS_PER_PAGE"},
 		{"rpp eleven", env("RESULTS_PER_PAGE=11"), "RESULTS_PER_PAGE"},
 		{"rpp not int", env("RESULTS_PER_PAGE=five"), "RESULTS_PER_PAGE"},

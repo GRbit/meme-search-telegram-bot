@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/grbit/meme-search-telegram-bot/configerr"
 )
 
 // Limits enforced by the API; requests outside them get 422.
@@ -134,6 +136,36 @@ const (
 
 var contentURLRe = regexp.MustCompile(`^/api/v1/memes/[1-9][0-9]*/content$`)
 
+// Validate reports every invalid field as a *configerr.Field. A zero Timeout
+// is valid and means DefaultTimeout.
+func (c Config) Validate() error {
+	var errs []error
+	bad := func(field, reason string) { errs = append(errs, &configerr.Field{Name: field, Reason: reason}) }
+	if c.URL == "" {
+		bad("URL", "required")
+	} else if u, err := url.Parse(c.URL); err != nil {
+		bad("URL", fmt.Sprintf("not a URL: %v", err))
+	} else {
+		switch {
+		case u.Scheme != "http" && u.Scheme != "https":
+			bad("URL", fmt.Sprintf("must be http:// or https://, got %q", c.URL))
+		case u.Host == "":
+			bad("URL", fmt.Sprintf("has no host: %q", c.URL))
+		case u.RawQuery != "" || u.Fragment != "" || u.User != nil:
+			// The token goes in a header; credentials or a query in the URL would
+			// end up in logs and in every request.
+			bad("URL", "must not contain credentials, a query or a fragment")
+		}
+	}
+	if c.Token == "" {
+		bad("Token", "required")
+	}
+	if c.Timeout < 0 {
+		bad("Timeout", fmt.Sprintf("must not be negative, got %s", c.Timeout))
+	}
+	return errors.Join(errs...)
+}
+
 // HTTPClient implements Client over HTTP.
 type HTTPClient struct {
 	base            string // scheme://host[/prefix] without trailing slash
@@ -150,25 +182,13 @@ var _ Client = (*HTTPClient)(nil)
 // The default client never follows redirects: the API does not redirect, and a
 // redirect elsewhere would be a way to make the bot send its token to a third party.
 func New(cfg Config, httpClient *http.Client, log *slog.Logger) (*HTTPClient, error) {
-	u, err := url.Parse(cfg.URL)
-	if err != nil {
-		return nil, fmt.Errorf("memesearch: bad URL: %w", err)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("memesearch: %w", err)
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, errors.New("memesearch: URL must be http:// or https://")
-	}
-	if u.Host == "" {
-		return nil, errors.New("memesearch: URL has no host")
-	}
-	if u.RawQuery != "" || u.Fragment != "" || u.User != nil {
-		return nil, errors.New("memesearch: URL must not contain credentials, a query or a fragment")
-	}
-	if cfg.Token == "" {
-		return nil, errors.New("memesearch: token is required")
-	}
+	u, _ := url.Parse(cfg.URL) // Validate parsed it already
 	if httpClient == nil {
 		timeout := cfg.Timeout
-		if timeout <= 0 {
+		if timeout == 0 {
 			timeout = DefaultTimeout
 		}
 		httpClient = &http.Client{

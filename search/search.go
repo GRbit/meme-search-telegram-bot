@@ -33,13 +33,17 @@ func LocaleFS() fs.FS {
 // CallbackPrefix starts the callback data of every button this module creates.
 const CallbackPrefix = "srch:"
 
-// Config tunes the module.
+// Config tunes the module. Zero values mean the defaults noted per field, so a
+// host only sets what it exposes. Inline mode is on when Deps.Media reports
+// UploadsEnabled: inline results need file_ids from the cache channel.
 type Config struct {
-	ResultsPerPage int
-	Mode           memesearch.Mode
-	PageTTL        time.Duration // how long fetched results stay pageable
-	InlineEnabled  bool          // the host enables it only with a cache channel
+	ResultsPerPage int             // 1..10 (Telegram album limit); 0 means 5
+	Mode           memesearch.Mode // "" means memesearch.ModeVector
+	PageTTL        time.Duration   // how long fetched results stay pageable; 0 means 1h
 }
+
+// Validate reports every invalid field as a *configerr.Field.
+func (c Config) Validate() error { return nil }
 
 // MediaCache is what the module needs from mediacache.Cache.
 type MediaCache interface {

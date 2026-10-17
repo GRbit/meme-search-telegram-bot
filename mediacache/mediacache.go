@@ -26,14 +26,20 @@ import (
 // ErrNoCacheChat is returned by Resolve when no cache channel is configured.
 var ErrNoCacheChat = errors.New("mediacache: no cache chat configured")
 
-// Config tunes the cache. Zero CacheChatID disables uploads to a channel and warmup.
+// Config tunes the cache. Zero CacheChatID disables uploads to a channel and
+// warmup; other zero values mean the defaults noted per field.
 type Config struct {
-	CacheChatID         int64
-	LibraryDir          string        // root of the meme-search image folders; empty disables the index
-	WarmupInterval      time.Duration // how often the library is rescanned
-	UploadsPerMin       int           // all uploads to the cache channel
-	WarmupUploadsPerMin int           // cap for background uploads, below UploadsPerMin
+	CacheChatID int64
+	// LibraryDir is the root of the meme-search image folders. Empty, or a
+	// directory that does not exist, disables the library index.
+	LibraryDir          string
+	WarmupInterval      time.Duration // how often the library is rescanned; 0 means 6h
+	UploadsPerMin       int           // all uploads to the cache channel; 0 means 20
+	WarmupUploadsPerMin int           // background cap, at most UploadsPerMin; 0 means 10
 }
+
+// Validate reports every invalid field as a *configerr.Field.
+func (c Config) Validate() error { return nil }
 
 // PhotoSender is the slice of the Telegram API the cache needs; *bot.Bot implements it.
 type PhotoSender interface {

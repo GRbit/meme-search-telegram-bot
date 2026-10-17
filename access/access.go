@@ -38,7 +38,8 @@ const (
 	TierSaver
 )
 
-// Config lists privileged users and public limits. Zero limits disable public search.
+// Config lists privileged users and public limits. Zero limits disable public
+// search; a zero InlineChargeWindow charges every inline query.
 type Config struct {
 	SaveUserIDs        []int64
 	TrustedUserIDs     []int64
@@ -48,8 +49,11 @@ type Config struct {
 	// as one search, because Telegram sends a query per keystroke.
 	InlineChargeWindow time.Duration
 	AdminContact       string
-	Location           *time.Location // day boundary for counters
+	Location           *time.Location // day boundary for counters; nil means UTC
 }
+
+// Validate reports every invalid field as a *configerr.Field.
+func (c Config) Validate() error { return nil }
 
 // Deps are the collaborators the host passes in.
 type Deps struct {

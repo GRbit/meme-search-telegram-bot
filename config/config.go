@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -25,6 +24,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/grbit/meme-search-telegram-bot/access"
+	"github.com/grbit/meme-search-telegram-bot/configerr"
 	"github.com/grbit/meme-search-telegram-bot/mediacache"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 	"github.com/grbit/meme-search-telegram-bot/saver"
@@ -55,10 +55,6 @@ const (
 	envConfigFile     = "CONFIG_FILE"
 	defaultConfigFile = "config.yml"
 
-	// Fixed by design, not configurable: no user asked to tune them.
-	pageTTL       = time.Hour
-	albumDebounce = 2 * time.Second
-
 	// Telegram rejects albums of more than 10 items.
 	maxResultsPerPage = 10
 )
@@ -71,21 +67,24 @@ type setting struct {
 	def    string
 	defRel bool // def is a path relative to the executable's directory
 	secret bool
-	set    func(c *Config, v string) error
-	get    func(c *Config) string
+	// field is "<Section>.<GoField>" when a module's Config.Validate owns the
+	// value rules, so its *configerr.Field errors can be reported by env name.
+	field string
+	set   func(c *Config, v string) error
+	get   func(c *Config) string
 }
 
 var settings = []setting{
 	{env: "TELEGRAM_BOT_TOKEN", key: "telegram.bot_token", secret: true,
 		set: func(c *Config, v string) error { c.TelegramToken = v; return nil },
 		get: func(c *Config) string { return c.TelegramToken }},
-	{env: "MEME_SEARCH_URL", key: "meme_search.url",
+	{env: "MEME_SEARCH_URL", key: "meme_search.url", field: "MemeSearch.URL",
 		set: func(c *Config, v string) error { c.MemeSearch.URL = v; return nil },
 		get: func(c *Config) string { return c.MemeSearch.URL }},
-	{env: "MEME_SEARCH_API_TOKEN", key: "meme_search.api_token", secret: true,
+	{env: "MEME_SEARCH_API_TOKEN", key: "meme_search.api_token", secret: true, field: "MemeSearch.Token",
 		set: func(c *Config, v string) error { c.MemeSearch.Token = v; return nil },
 		get: func(c *Config) string { return c.MemeSearch.Token }},
-	{env: "MEME_SEARCH_TIMEOUT", key: "meme_search.timeout", def: "15s",
+	{env: "MEME_SEARCH_TIMEOUT", key: "meme_search.timeout", def: memesearch.DefaultTimeout.String(), field: "MemeSearch.Timeout",
 		set: func(c *Config, v string) error { return parseDuration(v, &c.MemeSearch.Timeout) },
 		get: func(c *Config) string { return c.MemeSearch.Timeout.String() }},
 	{env: "RESULTS_PER_PAGE", key: "search.results_per_page", def: "5",
@@ -215,9 +214,6 @@ func Load(environ []string, exeDir string) (Config, error) {
 	if c.Media.LibraryDir == "" {
 		c.Media.LibraryDir = c.Saver.Dir
 	}
-	c.Search.PageTTL = pageTTL
-	c.Search.InlineEnabled = c.Media.CacheChatID != 0
-	c.Saver.AlbumDebounce = albumDebounce
 	c.Access.Location = c.Location
 	c.Saver.Location = c.Location
 	c.SaverEnabled = len(c.Access.SaveUserIDs) > 0
@@ -352,17 +348,6 @@ func (c *Config) validate() error {
 	if c.TelegramToken == "" {
 		errs = append(errs, fieldErr("TELEGRAM_BOT_TOKEN", "required"))
 	}
-	if c.MemeSearch.URL == "" {
-		errs = append(errs, fieldErr("MEME_SEARCH_URL", "required"))
-	} else if u, err := url.Parse(c.MemeSearch.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		errs = append(errs, fieldErr("MEME_SEARCH_URL", "must be an http or https URL, got %q", c.MemeSearch.URL))
-	}
-	if c.MemeSearch.Token == "" {
-		errs = append(errs, fieldErr("MEME_SEARCH_API_TOKEN", "required"))
-	}
-	if c.MemeSearch.Timeout <= 0 {
-		errs = append(errs, fieldErr("MEME_SEARCH_TIMEOUT", "must be positive, got %s", c.MemeSearch.Timeout))
-	}
 	if n := c.Search.ResultsPerPage; n < 1 || n > maxResultsPerPage {
 		errs = append(errs, fieldErr("RESULTS_PER_PAGE", "must be between 1 and %d (Telegram album limit), got %d", maxResultsPerPage, n))
 	}
@@ -393,7 +378,28 @@ func (c *Config) validate() error {
 	if c.DefaultLang == "" {
 		errs = append(errs, fieldErr("DEFAULT_LANG", "must not be empty"))
 	}
+	errs = append(errs, moduleErrs("MemeSearch", c.MemeSearch.Validate())...)
 	return errors.Join(errs...)
+}
+
+// moduleErrs maps a module's Config.Validate result to env-named errors.
+func moduleErrs(section string, err error) []error {
+	fields, rest := configerr.Fields(err)
+	out := make([]error, 0, len(fields)+len(rest))
+	for _, f := range fields {
+		env := section + "." + f.Name
+		for _, s := range settings {
+			if s.field == env {
+				env = s.env
+				break
+			}
+		}
+		out = append(out, fieldErr(env, "%s", f.Reason))
+	}
+	for _, e := range rest {
+		out = append(out, fmt.Errorf("config: %s: %w", section, e))
+	}
+	return out
 }
 
 // fieldErr names both the env var and the YAML key: the user may have set
@@ -422,7 +428,7 @@ func (c Config) Summary() string {
 		}
 		fmt.Fprintf(&b, "%s=%s\n", s.env, v)
 	}
-	fmt.Fprintf(&b, "inline_enabled=%t\nsaver_enabled=%t", c.Search.InlineEnabled, c.SaverEnabled)
+	fmt.Fprintf(&b, "inline_enabled=%t\nsaver_enabled=%t", c.Media.CacheChatID != 0, c.SaverEnabled)
 	return b.String()
 }
 
