@@ -34,7 +34,7 @@ flowchart TD
 
     SV --> K{already in the collection? file_unique_id or SHA-256}
     K -->|yes| R1[reply: already in the collection]
-    K -->|no| F[write LIBRARY/tg-username/date_source_msgid.jpg]
+    K -->|no| F[write SAVE_DIR/tg-username/date_source_msgid.jpg]
     F --> R2[reply: Saved + SAVE_NOTE]
     F -.queued.-> W
 
@@ -181,7 +181,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 
 ### Limits
 
-Every text search, inline search and "similar" button press by a public user counts as one search; paging
+Every text search and inline search by a public user counts as one search; paging
 with "More" is free, it reuses results the bot already has. Telegram sends an inline query on every keystroke,
 so inline queries count once per `INLINE_CHARGE_WINDOW`. Counters are stored in SQLite and reset at midnight in
 `TZ`. Search API v1 allows 60 requests per minute per token; the limits keep public use well below that.

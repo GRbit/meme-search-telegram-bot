@@ -2,9 +2,11 @@
 
 Every feature of this bot is a public package that attaches to a `*bot.Bot` you own
 ([go-telegram/bot](https://github.com/go-telegram/bot)). Your host keeps its own handlers; the modules match only
-their own updates (private text, `srch:` callbacks and inline queries for `search`; photos and image documents
-from allowed users for `saver`), so nothing is stolen from your handlers. Never use `bot.WithDefaultHandler`
-for something the modules should see.
+their own updates: `search` takes every private non-command text message, `/start`, `/help`, `srch:` callbacks
+and (with a cache channel) inline queries; `saver` takes photos and jpg/png/webp documents from allowed users.
+go-telegram/bot runs the first handler that matches, in registration order, so register your own handlers for
+private text (or anything else that overlaps) before the modules. Never use `bot.WithDefaultHandler` for
+something the modules should see.
 
 ```go
 db, _ := store.Open(ctx, "data/bot.db", log)
