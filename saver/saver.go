@@ -89,9 +89,15 @@ type Module struct {
 	hashes folderHashes
 	albums *albums
 	httpc  *http.Client
+	// downloadTimeout bounds getFile plus the download: an album reply waits for
+	// every item, so one stalled connection must not hold it forever.
+	downloadTimeout time.Duration
 }
 
 var _ module.Module = (*Module)(nil)
+
+// defaultDownloadTimeout is generous: bot downloads are at most 20 MB.
+const defaultDownloadTimeout = 2 * time.Minute
 
 // New validates the config, applies defaults and creates Dir if missing.
 func New(cfg Config, deps Deps) (*Module, error) {
@@ -123,7 +129,7 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
 		return nil, fmt.Errorf("saver: create dir: %w", err)
 	}
-	m := &Module{cfg: cfg, deps: deps, log: deps.Log, httpc: httpc, hashes: folderHashes{}}
+	m := &Module{cfg: cfg, deps: deps, log: deps.Log, httpc: httpc, downloadTimeout: defaultDownloadTimeout, hashes: folderHashes{}}
 	m.albums = newAlbums(cfg.AlbumDebounce, m.flushAlbum)
 	deps.Log.Info("saver: enabled", "dir", cfg.Dir, "dir_prefix", cfg.DirPrefix)
 	return m, nil

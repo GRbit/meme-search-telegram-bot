@@ -187,6 +187,8 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 
 // download returns the bytes and Telegram's file path (used for the extension).
 func (m *Module) download(ctx context.Context, b *bot.Bot, ref fileRef) ([]byte, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, m.downloadTimeout)
+	defer cancel()
 	f, err := b.GetFile(ctx, &bot.GetFileParams{FileID: ref.FileID})
 	if err != nil {
 		return nil, "", fmt.Errorf("getFile: %w", err)

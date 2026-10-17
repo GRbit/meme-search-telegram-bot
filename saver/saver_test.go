@@ -485,3 +485,30 @@ type failingTransport struct{}
 func (failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, errors.New("boom")
 }
+
+// hangingTransport never answers until the request is cancelled, like a stalled
+// connection to Telegram's file server.
+type hangingTransport struct{}
+
+func (hangingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	<-r.Context().Done()
+	return nil, r.Context().Err()
+}
+
+// A stalled download must fail with a reply instead of hanging forever: an
+// album waiting on it would otherwise never get its confirmation.
+func TestStalledDownloadTimesOut(t *testing.T) {
+	e := newEnv(t, nil)
+	e.mod.httpc = &http.Client{Transport: hangingTransport{}}
+	e.mod.downloadTimeout = 50 * time.Millisecond
+	e.api.files["p"] = []byte("x")
+	done := make(chan struct{})
+	go func() {
+		e.send(photoMsg(1, "p"))
+		close(done)
+	}()
+	if got := e.api.reply(t); got != "Could not save, please try again later." {
+		t.Fatalf("reply = %q", got)
+	}
+	<-done
+}
