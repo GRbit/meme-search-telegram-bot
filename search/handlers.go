@@ -86,7 +86,7 @@ func (m *Module) handleCommand(ctx context.Context, b *bot.Bot, u *models.Update
 		m.log.WarnContext(ctx, "search: getMe failed", "err", err)
 	}
 	loc := m.deps.I18n.Localizer(msg.From.LanguageCode)
-	m.sendText(ctx, b, msg.Chat.ID, loc.T("search."+cmd, map[string]any{"BotUsername": name}), nil)
+	m.sendText(ctx, b, msg.Chat.ID, loc.T("search."+cmd, map[string]any{"BotUsername": name, "Inline": m.deps.Media.UploadsEnabled()}), nil)
 }
 
 func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {

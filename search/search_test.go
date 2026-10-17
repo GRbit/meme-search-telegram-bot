@@ -536,3 +536,16 @@ func TestStartAndHelp(t *testing.T) {
 		t.Fatalf("getMe called %d times, want 1 (cached)", n)
 	}
 }
+
+// Without a cache channel there is no inline mode, so /start and /help must not
+// tell users to type @bot in other chats.
+func TestStartWithoutInlineDoesNotAdvertiseIt(t *testing.T) {
+	e := newEnv(t, &fakeAPI{}, &fakeMedia{uploads: false})
+	e.process(textUpdate("/start"))
+	e.process(textUpdate("/help"))
+	for _, m := range e.tg.byMethod("sendMessage") {
+		if strings.Contains(m.fields["text"], "@meme_test_bot") {
+			t.Fatalf("text advertises inline mode: %q", m.fields["text"])
+		}
+	}
+}
