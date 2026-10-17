@@ -4,3 +4,6 @@ saver.already_in_collection: "Этот мем уже есть в коллекц�
 saver.duplicate: "Уже сохранено."
 saver.unsupported: "Сохранять можно только фото и картинки."
 saver.error: "Не удалось сохранить, попробуй позже."
+saver.album_already: "Уже есть в коллекции: {{.Count}}."
+saver.album_duplicate: "Уже сохранено раньше: {{.Count}}."
+saver.album_failed: "Не удалось сохранить: {{.Count}}."
