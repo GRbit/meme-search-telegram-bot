@@ -54,9 +54,6 @@ type Config struct {
 const (
 	envConfigFile     = "CONFIG_FILE"
 	defaultConfigFile = "config.yml"
-
-	// Telegram rejects albums of more than 10 items.
-	maxResultsPerPage = 10
 )
 
 // setting is one row of the env <-> YAML table, the single source of truth
@@ -87,10 +84,10 @@ var settings = []setting{
 	{env: "MEME_SEARCH_TIMEOUT", key: "meme_search.timeout", def: memesearch.DefaultTimeout.String(), field: "MemeSearch.Timeout",
 		set: func(c *Config, v string) error { return parseDuration(v, &c.MemeSearch.Timeout) },
 		get: func(c *Config) string { return c.MemeSearch.Timeout.String() }},
-	{env: "RESULTS_PER_PAGE", key: "search.results_per_page", def: "5",
+	{env: "RESULTS_PER_PAGE", key: "search.results_per_page", field: "Search.ResultsPerPage", def: "5",
 		set: func(c *Config, v string) error { return parseInt(v, &c.Search.ResultsPerPage) },
 		get: func(c *Config) string { return strconv.Itoa(c.Search.ResultsPerPage) }},
-	{env: "SEARCH_MODE", key: "search.mode", def: string(memesearch.ModeVector),
+	{env: "SEARCH_MODE", key: "search.mode", field: "Search.Mode", def: string(memesearch.ModeVector),
 		set: func(c *Config, v string) error { c.Search.Mode = memesearch.Mode(v); return nil },
 		get: func(c *Config) string { return string(c.Search.Mode) }},
 	{env: "CACHE_CHAT_ID", key: "cache.chat_id", def: "0",
@@ -348,12 +345,6 @@ func (c *Config) validate() error {
 	if c.TelegramToken == "" {
 		errs = append(errs, fieldErr("TELEGRAM_BOT_TOKEN", "required"))
 	}
-	if n := c.Search.ResultsPerPage; n < 1 || n > maxResultsPerPage {
-		errs = append(errs, fieldErr("RESULTS_PER_PAGE", "must be between 1 and %d (Telegram album limit), got %d", maxResultsPerPage, n))
-	}
-	if c.Search.Mode != memesearch.ModeVector && c.Search.Mode != memesearch.ModeKeyword {
-		errs = append(errs, fieldErr("SEARCH_MODE", "must be %s or %s, got %q", memesearch.ModeVector, memesearch.ModeKeyword, c.Search.Mode))
-	}
 	if c.Media.WarmupInterval <= 0 {
 		errs = append(errs, fieldErr("WARMUP_INTERVAL", "must be positive, got %s", c.Media.WarmupInterval))
 	}
@@ -370,6 +361,7 @@ func (c *Config) validate() error {
 		errs = append(errs, fieldErr("DEFAULT_LANG", "must not be empty"))
 	}
 	errs = append(errs, moduleErrs("MemeSearch", c.MemeSearch.Validate())...)
+	errs = append(errs, moduleErrs("Search", c.Search.Validate())...)
 	errs = append(errs, moduleErrs("Access", c.Access.Validate())...)
 	errs = append(errs, moduleErrs("Saver", c.Saver.Validate())...)
 	return errors.Join(errs...)

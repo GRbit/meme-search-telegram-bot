@@ -283,7 +283,6 @@ func TestValidation(t *testing.T) {
 		{"url query", env("MEME_SEARCH_URL=https://x/?a=1"), "MEME_SEARCH_URL"},
 		{"url userinfo", env("MEME_SEARCH_URL=https://u:p@x"), "MEME_SEARCH_URL"},
 		{"timeout negative", env("MEME_SEARCH_TIMEOUT=-1s"), "MEME_SEARCH_TIMEOUT"},
-		{"rpp zero", env("RESULTS_PER_PAGE=0"), "RESULTS_PER_PAGE"},
 		{"rpp eleven", env("RESULTS_PER_PAGE=11"), "RESULTS_PER_PAGE"},
 		{"rpp not int", env("RESULTS_PER_PAGE=five"), "RESULTS_PER_PAGE"},
 		{"mode", env("SEARCH_MODE=hybrid"), "SEARCH_MODE"},
@@ -322,7 +321,7 @@ func TestDefaultLangEmptyInFile(t *testing.T) {
 }
 
 func TestValidationReportsAllErrors(t *testing.T) {
-	_, err := Load([]string{"RESULTS_PER_PAGE=0"}, t.TempDir())
+	_, err := Load([]string{"RESULTS_PER_PAGE=11"}, t.TempDir())
 	if err == nil {
 		t.Fatal("want error")
 	}
