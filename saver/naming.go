@@ -83,11 +83,6 @@ var mimeExt = map[string]string{
 	"image/jpg":  "jpg",
 	"image/png":  "png",
 	"image/webp": "webp",
-	"image/heic": "heic",
-	"image/heif": "heif",
-	"image/bmp":  "bmp",
-	"image/tiff": "tiff",
-	"image/avif": "avif",
 }
 
 // pickExt prefers Telegram's own file path (it reflects the real format), then
@@ -103,12 +98,13 @@ func pickExt(filePath, mimeType string) string {
 	return "jpg"
 }
 
-// isSavableMIME accepts any image except GIF, which the plan rejects because
-// animations are not memes for this collection.
+// isSavableMIME accepts the still-image formats meme-search's own uploader
+// takes (jpg, png, webp); anything else would sit in the library unsearchable.
+// GIF is left out on purpose: animations are not memes for this collection.
 func isSavableMIME(mimeType string) bool {
 	mt, _, _ := strings.Cut(strings.ToLower(mimeType), ";")
-	mt = strings.TrimSpace(mt)
-	return strings.HasPrefix(mt, "image/") && mt != "image/gif"
+	_, ok := mimeExt[strings.TrimSpace(mt)]
+	return ok
 }
 
 // fileRef is the Telegram file chosen from a message.

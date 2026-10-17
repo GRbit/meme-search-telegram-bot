@@ -99,3 +99,17 @@ func TestPickFile(t *testing.T) {
 		t.Error("sticker must not match")
 	}
 }
+
+// Only formats meme-search's own uploader accepts (and the media cache indexes)
+// may be saved; a HEIC file in the library would never become searchable.
+func TestIsSavableMIME(t *testing.T) {
+	for mt, want := range map[string]bool{
+		"image/jpeg": true, "image/png": true, "image/webp": true, "IMAGE/JPEG; q=1": true,
+		"image/gif": false, "image/heic": false, "image/bmp": false, "image/tiff": false,
+		"image/avif": false, "application/pdf": false, "": false,
+	} {
+		if got := isSavableMIME(mt); got != want {
+			t.Errorf("isSavableMIME(%q) = %v, want %v", mt, got, want)
+		}
+	}
+}
