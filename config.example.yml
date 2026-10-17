@@ -1,0 +1,40 @@
+# meme-search-telegram-bot config file. Copy to config.yml (in Docker: mount it as /config/config.yml).
+# Precedence: built-in defaults -> this file -> environment variables. Env vars override the file.
+# The matching env var is named in each comment; see .env.example for the long explanations.
+
+telegram:
+  bot_token: ""            # TELEGRAM_BOT_TOKEN, required, from @BotFather
+
+meme_search:
+  url: ""                  # MEME_SEARCH_URL, required, e.g. http://meme_search:3000
+  api_token: ""            # MEME_SEARCH_API_TOKEN, required, scopes search:read,media:read
+  # timeout: 15s           # request timeout to the meme-search API
+
+search:
+  results_per_page: 5      # RESULTS_PER_PAGE
+  mode: vector             # SEARCH_MODE: vector or keyword
+
+cache:
+  chat_id: ""              # CACHE_CHAT_ID, private channel id like -1001234567890; empty = inline off
+  library_dir: ""          # LIBRARY_DIR, default = saver.dir
+  warmup_interval: 6h      # WARMUP_INTERVAL
+  uploads_per_min: 20      # CACHE_UPLOADS_PER_MIN
+  warmup_uploads_per_min: 10   # WARMUP_UPLOADS_PER_MIN
+
+saver:
+  dir: ""                  # SAVE_DIR, default memes/ next to the executable
+  dir_prefix: tg-          # SAVE_DIR_PREFIX
+  note: ""                 # SAVE_NOTE, appended to the "Saved" reply
+
+access:
+  save_user_ids: []        # SAVE_USER_IDS, e.g. [111111, 222222]; also trusted
+  trusted_user_ids: []     # TRUSTED_USER_IDS, unlimited search
+  public_daily_per_user: 5 # PUBLIC_DAILY_PER_USER, 0 disables public search
+  public_daily_total: 120  # PUBLIC_DAILY_TOTAL
+  inline_charge_window: 10s  # INLINE_CHARGE_WINDOW
+  admin_contact: ""        # ADMIN_CONTACT, e.g. "@your_username"
+
+default_lang: en           # DEFAULT_LANG
+tz: UTC                    # TZ
+db_path: ""                # DB_PATH, default data/bot.db next to the executable
+log_level: info            # LOG_LEVEL

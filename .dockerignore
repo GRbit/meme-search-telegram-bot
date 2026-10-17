@@ -1,0 +1,12 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+data
+memes
+docs
+*.md
+Makefile
+Dockerfile
+docker-compose*.yml

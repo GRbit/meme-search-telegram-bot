@@ -1,0 +1,25 @@
+# Run the bot next to upstream meme-search. From the meme-search directory:
+#
+#   cp /path/to/this/repo/docker-compose.meme-search.yml .
+#   cp /path/to/this/repo/.env.example .env   # fill in, MEME_SEARCH_URL is already set below
+#   docker compose -f docker-compose.yml -f docker-compose.meme-search.yml up -d
+#
+# Both files form one compose project, so the bot lands on the same default network as the
+# meme_search service and reaches it as http://meme_search:3000 (the container port, not APP_PORT).
+# Relative paths resolve against the first -f file's directory, i.e. the meme-search directory.
+services:
+  telegram_bot:
+    image: ghcr.io/grbit/meme-search-telegram-bot:latest
+    container_name: meme_search_telegram_bot
+    env_file: .env
+    environment:
+      MEME_SEARCH_URL: http://meme_search:3000
+    depends_on:
+      - meme_search
+    volumes:
+      - ${MEME_SEARCH_TELEGRAM_BOT_DATA:-./meme_search/telegram-bot}:/data
+      # Same host folder upstream mounts to /rails/public/memes. The bot saves into tg-<user>
+      # subfolders of it; register each one in meme-search Settings -> Image paths.
+      - ./meme_search/memes/:/memes
+      - ./meme_search/telegram-bot-config:/config:ro
+    restart: unless-stopped

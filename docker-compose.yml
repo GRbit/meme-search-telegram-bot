@@ -1,0 +1,13 @@
+# The bot alone. Use docker-compose.meme-search.yml to run it next to meme-search.
+services:
+  bot:
+    image: ghcr.io/grbit/meme-search-telegram-bot:latest
+    container_name: meme-search-telegram-bot
+    env_file: .env
+    volumes:
+      - ./data:/data # SQLite database
+      # Point this at the same folder meme-search reads its images from: saved memes land here and
+      # the cache warmup scans it. Must be writable by uid 1000 (see APP_UID in the Dockerfile).
+      - ./memes:/memes
+      - ./config:/config:ro # optional config.yml, env vars override it
+    restart: unless-stopped
