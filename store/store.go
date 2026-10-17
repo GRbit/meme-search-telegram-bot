@@ -2,7 +2,8 @@
 //
 // Modules receive a plain *sql.DB and own their tables, which carry the module
 // name as a prefix (mediacache_, access_). A host embedding the modules can pass
-// its own SQLite handle instead of using Open.
+// its own SQLite handle instead of using Open, as long as Check accepts it;
+// modules write only through WriteTx so locking does not depend on the DSN.
 package store
 
 import (
@@ -95,36 +96,81 @@ func Migrate(ctx context.Context, db *sql.DB, module string, steps []string) err
 }
 
 // migrateStep applies the next pending step, reporting done when none is left.
-func migrateStep(ctx context.Context, db *sql.DB, module string, steps []string) (bool, error) {
-	// ncruces maps LevelSerializable to BEGIN IMMEDIATE regardless of the DSN, so
-	// this holds for a handle a host opened itself.
+func migrateStep(ctx context.Context, db *sql.DB, module string, steps []string) (done bool, err error) {
+	err = WriteTx(ctx, db, func(tx *sql.Tx) error {
+		var v int
+		err := tx.QueryRowContext(ctx, `SELECT version FROM store_migrations WHERE module = ?`, module).Scan(&v)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("read version: %w", err)
+		}
+		switch {
+		case v > len(steps):
+			return fmt.Errorf("database has %d steps applied, code knows %d: database is newer than this binary",
+				v, len(steps))
+		case v == len(steps):
+			done = true
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, steps[v]); err != nil {
+			return fmt.Errorf("step %d: %w", v+1, err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO store_migrations (module, version) VALUES (?, ?)
+			ON CONFLICT (module) DO UPDATE SET version = excluded.version`, module, v+1); err != nil {
+			return fmt.Errorf("step %d: bump version: %w", v+1, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("store: migrate %q: %w", module, err)
+	}
+	return done, nil
+}
+
+// WriteTx runs fn in a write transaction and commits it, or rolls back and
+// returns fn's error unchanged. Every module write goes through it.
+//
+// The transaction begins IMMEDIATE whatever the handle's DSN says: with a
+// deferred BEGIN, two concurrent read-then-write transactions both hold read
+// locks and one fails at upgrade with SQLITE_BUSY without waiting out
+// busy_timeout. ncruces maps LevelSerializable to BEGIN IMMEDIATE.
+func WriteTx(ctx context.Context, db *sql.DB, fn func(tx *sql.Tx) error) error {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
-		return false, fmt.Errorf("store: migrate %q: begin: %w", module, err)
+		return fmt.Errorf("store: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	var v int
-	err = tx.QueryRowContext(ctx, `SELECT version FROM store_migrations WHERE module = ?`, module).Scan(&v)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return false, fmt.Errorf("store: migrate %q: read version: %w", module, err)
-	}
-	switch {
-	case v > len(steps):
-		return false, fmt.Errorf("store: migrate %q: database has %d steps applied, code knows %d: database is newer than this binary",
-			module, v, len(steps))
-	case v == len(steps):
-		return true, nil
-	}
-	if _, err := tx.ExecContext(ctx, steps[v]); err != nil {
-		return false, fmt.Errorf("store: migrate %q: step %d: %w", module, v+1, err)
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO store_migrations (module, version) VALUES (?, ?)
-		ON CONFLICT (module) DO UPDATE SET version = excluded.version`, module, v+1); err != nil {
-		return false, fmt.Errorf("store: migrate %q: bump version: %w", module, err)
+	if err := fn(tx); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("store: migrate %q: step %d: commit: %w", module, v+1, err)
+		return fmt.Errorf("store: commit: %w", err)
 	}
-	return false, nil
+	return nil
+}
+
+// Check verifies that a handle has the pragmas modules rely on: busy_timeout
+// (concurrent writers wait instead of failing) and foreign_keys. Module
+// constructors call it so a host-opened handle fails at startup, not under load.
+//
+// It checks one pooled connection; a DSN-level pragma applies to all of them,
+// an Exec-level one does not, which is why Open puts them in the DSN.
+func Check(ctx context.Context, db *sql.DB) error {
+	var busy, fk int
+	if err := db.QueryRowContext(ctx, `PRAGMA busy_timeout`).Scan(&busy); err != nil {
+		return fmt.Errorf("store: check busy_timeout: %w", err)
+	}
+	if err := db.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&fk); err != nil {
+		return fmt.Errorf("store: check foreign_keys: %w", err)
+	}
+	var problems []error
+	if busy <= 0 {
+		problems = append(problems, errors.New("busy_timeout is 0, concurrent writes would fail with SQLITE_BUSY"))
+	}
+	if fk != 1 {
+		problems = append(problems, errors.New("foreign_keys is off"))
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("store: handle not usable, open it with store.Open: %w", errors.Join(problems...))
+	}
+	return nil
 }
