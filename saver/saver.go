@@ -6,13 +6,17 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/go-telegram/bot"
 
+	"github.com/grbit/meme-search-telegram-bot/configerr"
 	"github.com/grbit/meme-search-telegram-bot/i18n"
 	"github.com/grbit/meme-search-telegram-bot/module"
 )
@@ -39,7 +43,16 @@ type Config struct {
 }
 
 // Validate reports every invalid field as a *configerr.Field.
-func (c Config) Validate() error { return nil }
+func (c Config) Validate() error {
+	var errs []error
+	if c.Dir == "" {
+		errs = append(errs, &configerr.Field{Name: "Dir", Reason: "is required"})
+	}
+	if c.AlbumDebounce < 0 {
+		errs = append(errs, &configerr.Field{Name: "AlbumDebounce", Reason: "must not be negative"})
+	}
+	return errors.Join(errs...)
+}
 
 // Permit decides who may save; access.Access implements it.
 type Permit interface {
@@ -61,18 +74,62 @@ type Deps struct {
 	I18n   *i18n.Bundle
 	Log    *slog.Logger
 	HTTP   *http.Client     // downloads files from Telegram; nil means http.DefaultClient
-	Now    func() time.Time // nil means time.Now
+	Now    func() time.Time // nil means time.Now; used only for messages without a date
 }
 
 // Module implements module.Module.
-type Module struct{}
+type Module struct {
+	cfg  Config
+	deps Deps
+	log  *slog.Logger
+
+	// mu serializes the dedup check, name choice and write so two album items with
+	// equal bytes cannot both pass the folder check. Downloads happen outside it.
+	mu     sync.Mutex
+	hashes folderHashes
+	albums *albums
+	httpc  *http.Client
+}
 
 var _ module.Module = (*Module)(nil)
 
-// New validates the config and creates Dir if missing.
+// New validates the config, applies defaults and creates Dir if missing.
 func New(cfg Config, deps Deps) (*Module, error) {
-	return nil, errors.New("saver: not implemented")
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("saver: %w", err)
+	}
+	if deps.Permit == nil {
+		return nil, errors.New("saver: Deps.Permit is required")
+	}
+	if deps.I18n == nil {
+		return nil, errors.New("saver: Deps.I18n is required")
+	}
+	if cfg.AlbumDebounce == 0 {
+		cfg.AlbumDebounce = 2 * time.Second
+	}
+	if cfg.Location == nil {
+		cfg.Location = time.UTC
+	}
+	if deps.Log == nil {
+		deps.Log = slog.New(slog.DiscardHandler)
+	}
+	if deps.Now == nil {
+		deps.Now = time.Now
+	}
+	httpc := deps.HTTP
+	if httpc == nil {
+		httpc = http.DefaultClient
+	}
+	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
+		return nil, fmt.Errorf("saver: create dir: %w", err)
+	}
+	m := &Module{cfg: cfg, deps: deps, log: deps.Log, httpc: httpc, hashes: folderHashes{}}
+	m.albums = newAlbums(cfg.AlbumDebounce, m.flushAlbum)
+	deps.Log.Info("saver: enabled", "dir", cfg.Dir, "dir_prefix", cfg.DirPrefix)
+	return m, nil
 }
 
 // Register attaches the module's handlers.
-func (m *Module) Register(b *bot.Bot) {}
+func (m *Module) Register(b *bot.Bot) {
+	b.RegisterHandlerMatchFunc(m.match, m.handle)
+}
