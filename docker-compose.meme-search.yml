@@ -1,9 +1,10 @@
 # Run the bot next to upstream meme-search. From the meme-search directory:
 #
 #   cp /path/to/this/repo/docker-compose.meme-search.yml .
-#   cp /path/to/this/repo/.env.example .env   # fill in, MEME_SEARCH_URL is already set below
+#   cp /path/to/this/repo/.env.example .env.telegram-bot   # fill in; MEME_SEARCH_URL is set below
 #   docker compose -f docker-compose.yml -f docker-compose.meme-search.yml up -d
 #
+# The bot has its own env file because meme-search already uses .env for its compose variables.
 # Both files form one compose project, so the bot lands on the same default network as the
 # meme_search service and reaches it as http://meme_search:3000 (the container port, not APP_PORT).
 # Relative paths resolve against the first -f file's directory, i.e. the meme-search directory.
@@ -11,7 +12,7 @@ services:
   telegram_bot:
     image: ghcr.io/grbit/meme-search-telegram-bot:latest
     container_name: meme_search_telegram_bot
-    env_file: .env
+    env_file: .env.telegram-bot
     environment:
       MEME_SEARCH_URL: http://meme_search:3000
     depends_on:
