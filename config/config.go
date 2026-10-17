@@ -109,7 +109,7 @@ var settings = []setting{
 	{env: "WARMUP_UPLOADS_PER_MIN", key: "cache.warmup_uploads_per_min", def: "10",
 		set: func(c *Config, v string) error { return parseInt(v, &c.Media.WarmupUploadsPerMin) },
 		get: func(c *Config) string { return strconv.Itoa(c.Media.WarmupUploadsPerMin) }},
-	{env: "SAVE_DIR", key: "saver.dir", def: "memes", defRel: true,
+	{env: "SAVE_DIR", key: "saver.dir", field: "Saver.Dir", def: "memes", defRel: true,
 		set: func(c *Config, v string) error { c.Saver.Dir = v; return nil },
 		get: func(c *Config) string { return c.Saver.Dir }},
 	{env: "SAVE_DIR_PREFIX", key: "saver.dir_prefix", def: "tg-",
@@ -118,19 +118,19 @@ var settings = []setting{
 	{env: "SAVE_NOTE", key: "saver.note",
 		set: func(c *Config, v string) error { c.Saver.Note = v; return nil },
 		get: func(c *Config) string { return c.Saver.Note }},
-	{env: "SAVE_USER_IDS", key: "access.save_user_ids",
+	{env: "SAVE_USER_IDS", key: "access.save_user_ids", field: "Access.SaveUserIDs",
 		set: func(c *Config, v string) error { return parseIDs(v, &c.Access.SaveUserIDs) },
 		get: func(c *Config) string { return formatIDs(c.Access.SaveUserIDs) }},
-	{env: "TRUSTED_USER_IDS", key: "access.trusted_user_ids",
+	{env: "TRUSTED_USER_IDS", key: "access.trusted_user_ids", field: "Access.TrustedUserIDs",
 		set: func(c *Config, v string) error { return parseIDs(v, &c.Access.TrustedUserIDs) },
 		get: func(c *Config) string { return formatIDs(c.Access.TrustedUserIDs) }},
-	{env: "PUBLIC_DAILY_PER_USER", key: "access.public_daily_per_user", def: "5",
+	{env: "PUBLIC_DAILY_PER_USER", key: "access.public_daily_per_user", field: "Access.PublicDailyPerUser", def: "5",
 		set: func(c *Config, v string) error { return parseInt(v, &c.Access.PublicDailyPerUser) },
 		get: func(c *Config) string { return strconv.Itoa(c.Access.PublicDailyPerUser) }},
-	{env: "PUBLIC_DAILY_TOTAL", key: "access.public_daily_total", def: "120",
+	{env: "PUBLIC_DAILY_TOTAL", key: "access.public_daily_total", field: "Access.PublicDailyTotal", def: "120",
 		set: func(c *Config, v string) error { return parseInt(v, &c.Access.PublicDailyTotal) },
 		get: func(c *Config) string { return strconv.Itoa(c.Access.PublicDailyTotal) }},
-	{env: "INLINE_CHARGE_WINDOW", key: "access.inline_charge_window", def: "10s",
+	{env: "INLINE_CHARGE_WINDOW", key: "access.inline_charge_window", field: "Access.InlineChargeWindow", def: "10s",
 		set: func(c *Config, v string) error { return parseDuration(v, &c.Access.InlineChargeWindow) },
 		get: func(c *Config) string { return c.Access.InlineChargeWindow.String() }},
 	{env: "ADMIN_CONTACT", key: "access.admin_contact",
@@ -354,15 +354,6 @@ func (c *Config) validate() error {
 	if c.Search.Mode != memesearch.ModeVector && c.Search.Mode != memesearch.ModeKeyword {
 		errs = append(errs, fieldErr("SEARCH_MODE", "must be %s or %s, got %q", memesearch.ModeVector, memesearch.ModeKeyword, c.Search.Mode))
 	}
-	if c.Access.PublicDailyPerUser < 0 {
-		errs = append(errs, fieldErr("PUBLIC_DAILY_PER_USER", "must not be negative, got %d", c.Access.PublicDailyPerUser))
-	}
-	if c.Access.PublicDailyTotal < 0 {
-		errs = append(errs, fieldErr("PUBLIC_DAILY_TOTAL", "must not be negative, got %d", c.Access.PublicDailyTotal))
-	}
-	if c.Access.InlineChargeWindow < 0 {
-		errs = append(errs, fieldErr("INLINE_CHARGE_WINDOW", "must not be negative, got %s", c.Access.InlineChargeWindow))
-	}
 	if c.Media.WarmupInterval <= 0 {
 		errs = append(errs, fieldErr("WARMUP_INTERVAL", "must be positive, got %s", c.Media.WarmupInterval))
 	}
@@ -379,6 +370,8 @@ func (c *Config) validate() error {
 		errs = append(errs, fieldErr("DEFAULT_LANG", "must not be empty"))
 	}
 	errs = append(errs, moduleErrs("MemeSearch", c.MemeSearch.Validate())...)
+	errs = append(errs, moduleErrs("Access", c.Access.Validate())...)
+	errs = append(errs, moduleErrs("Saver", c.Saver.Validate())...)
 	return errors.Join(errs...)
 }
 

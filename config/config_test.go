@@ -297,6 +297,8 @@ func TestValidation(t *testing.T) {
 		{"warmup above total", env("CACHE_UPLOADS_PER_MIN=5", "WARMUP_UPLOADS_PER_MIN=6"), "WARMUP_UPLOADS_PER_MIN"},
 		{"chat id bad", env("CACHE_CHAT_ID=@channel"), "CACHE_CHAT_ID"},
 		{"ids bad", env("SAVE_USER_IDS=1,x"), "SAVE_USER_IDS"},
+		{"ids not positive", env("SAVE_USER_IDS=1,0"), "SAVE_USER_IDS"},
+		{"trusted negative", env("TRUSTED_USER_IDS=-5"), "TRUSTED_USER_IDS"},
 		{"trusted bad", env("TRUSTED_USER_IDS=1;2"), "TRUSTED_USER_IDS"},
 		{"tz", env("TZ=Mars/Olympus"), "TZ"},
 		{"log level", env("LOG_LEVEL=loud"), "LOG_LEVEL"},
