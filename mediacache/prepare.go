@@ -118,9 +118,12 @@ type Direct struct {
 	log *slog.Logger
 }
 
-// NewDirect returns a Direct over api.
-func NewDirect(api memesearch.Client) *Direct {
-	return &Direct{api: api, log: slog.New(slog.DiscardHandler)}
+// NewDirect returns a Direct over api; a nil log discards its debug lines.
+func NewDirect(api memesearch.Client, log *slog.Logger) *Direct {
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	return &Direct{api: api, log: log}
 }
 
 // UploadsEnabled is always false: there is no cache channel.

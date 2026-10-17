@@ -90,7 +90,7 @@ var settings = []setting{
 	{env: "SEARCH_MODE", key: "search.mode", field: "Search.Mode", def: string(memesearch.ModeVector),
 		set: func(c *Config, v string) error { c.Search.Mode = memesearch.Mode(v); return nil },
 		get: func(c *Config) string { return string(c.Search.Mode) }},
-	{env: "CACHE_CHAT_ID", key: "cache.chat_id", def: "0",
+	{env: "CACHE_CHAT_ID", key: "cache.chat_id", field: "Media.CacheChatID", def: "0",
 		set: func(c *Config, v string) error { return parseInt64(v, &c.Media.CacheChatID) },
 		get: func(c *Config) string { return strconv.FormatInt(c.Media.CacheChatID, 10) }},
 	// Empty means "same as SAVE_DIR", resolved after all layers.

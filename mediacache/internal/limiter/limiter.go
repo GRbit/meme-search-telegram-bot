@@ -52,7 +52,7 @@ const window = time.Minute
 // Config sets the rates and capacities; all values must be positive.
 type Config struct {
 	PerMin           int // all jobs
-	BackgroundPerMin int // background jobs, on top of PerMin
+	BackgroundPerMin int // cap for background jobs, counted inside PerMin
 	RealtimeCap      int
 	BackgroundCap    int
 }

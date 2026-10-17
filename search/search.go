@@ -120,7 +120,7 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	case deps.API == nil:
 		return nil, errors.New("search: Deps.API is nil")
 	case deps.Media == nil:
-		return nil, errors.New("search: Deps.Media is nil (use mediacache.NewDirect(api) to run without a media cache)")
+		return nil, errors.New("search: Deps.Media is nil (use mediacache.NewDirect(api, log) to run without a media cache)")
 	case deps.I18n == nil:
 		return nil, errors.New("search: Deps.I18n is nil")
 	}

@@ -88,7 +88,7 @@ func TestPrepareRejectsNonPhoto(t *testing.T) {
 
 func TestDirect(t *testing.T) {
 	api := &fakeAPI{content: map[int64][]byte{1: []byte("bytes")}}
-	d := NewDirect(api)
+	d := NewDirect(api, nil)
 	ctx := t.Context()
 	if d.UploadsEnabled() {
 		t.Fatal("Direct must not enable uploads")
@@ -129,7 +129,7 @@ func TestNonPhotoMemesAreNotDownloaded(t *testing.T) {
 			t.Errorf("Resolve(%s) = %v, want ErrNotPhoto", mt, err)
 		}
 		e.c.Enqueue(m)
-		if _, err := NewDirect(e.api).Prepare(t.Context(), m); !errors.Is(err, ErrNotPhoto) {
+		if _, err := NewDirect(e.api, nil).Prepare(t.Context(), m); !errors.Is(err, ErrNotPhoto) {
 			t.Errorf("Direct.Prepare(%s) = %v, want ErrNotPhoto", mt, err)
 		}
 	}

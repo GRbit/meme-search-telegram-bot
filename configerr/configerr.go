@@ -13,6 +13,7 @@ type Field struct {
 	Reason string
 }
 
+// Error renders the field name and the reason.
 func (e *Field) Error() string { return e.Name + ": " + e.Reason }
 
 // Fields extracts every *Field from err, which may be a tree built with

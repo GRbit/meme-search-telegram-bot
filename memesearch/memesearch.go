@@ -102,6 +102,7 @@ type APIError struct {
 	RetryAfter time.Duration
 }
 
+// Error renders the status with the API's error code and message.
 func (e *APIError) Error() string {
 	return fmt.Sprintf("memesearch: http %d %s: %s", e.Status, e.Code, e.Message)
 }

@@ -57,7 +57,7 @@ func TestModulesShareOneBot(t *testing.T) {
 	}
 	api := &fakeAPI{}
 	srch, err := search.New(search.Config{}, search.Deps{
-		API: api, Media: mediacache.NewDirect(api), I18n: bundle,
+		API: api, Media: mediacache.NewDirect(api, nil), I18n: bundle,
 		Middlewares: []bot.Middleware{acc.Middleware(search.Chargeable)},
 	})
 	if err != nil {
