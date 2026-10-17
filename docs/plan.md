@@ -70,11 +70,13 @@ Media cache (`mediacache`, shared by search and saver):
   one row -> use it; several rows -> fetch the bytes from the API, SHA-256, pick the row with that hash. A library
   row without `file_id` is uploaded to the cache channel. No library row -> fetch bytes from the API and upload.
   The result is remembered by meme id.
-- Without a cache channel (private chat albums only): send bytes, remember the returned `file_id`.
+- Private chat albums never wait for the channel (decided after the third architecture review): a meme without
+  a `file_id` is sent as bytes (library file if possible, else API) and the returned `file_id` is remembered,
+  also on its library row. The channel serves only inline misses and warmup.
 - Warmup: when `CACHE_CHAT_ID` is set and `LIBRARY_DIR` exists, a background worker uploads every library file that
   has no `file_id` to the cache channel. Files the saver writes are queued right away.
 - Upload limiter: one queue for all cache channel uploads, `CACHE_UPLOADS_PER_MIN` total (default 20). Priority
-  `realtime` (user is waiting or inline miss) always goes before `background` (warmup); background is additionally
+  `realtime` (inline miss) always goes before `background` (warmup); background is additionally
   capped at `WARMUP_UPLOADS_PER_MIN` (default 10). A Telegram 429 pauses the queue for `retry_after`.
 - `file_unique_id` and SHA-256 lookups let the saver detect memes already in the collection.
 

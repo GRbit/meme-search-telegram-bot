@@ -179,6 +179,7 @@ func (a *fakeAPI) searchCount() int {
 type remembered struct {
 	memeID         int64
 	fileID, unique string
+	libPath        string
 }
 
 // fakeMedia implements MediaCache. Prepare returns FileID "prep-<id>" unless
@@ -211,7 +212,7 @@ func (m *fakeMedia) Prepare(_ context.Context, meme memesearch.Meme) (mediacache
 		return mediacache.Photo{}, err
 	}
 	if d, ok := m.data[meme.ID]; ok {
-		return mediacache.Photo{Name: meme.Filename, Data: d}, nil
+		return mediacache.Photo{Name: meme.Filename, Data: d, LibraryPath: "lib/" + meme.Filename}, nil
 	}
 	return mediacache.Photo{FileID: fmt.Sprintf("prep-%d", meme.ID), Name: meme.Filename}, nil
 }
@@ -224,10 +225,10 @@ func (m *fakeMedia) Enqueue(ms ...memesearch.Meme) {
 	}
 }
 
-func (m *fakeMedia) Remember(_ context.Context, memeID int64, fileID, unique string) error {
+func (m *fakeMedia) RememberPhoto(_ context.Context, memeID int64, p mediacache.Photo, fileID, unique string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.remembered = append(m.remembered, remembered{memeID, fileID, unique})
+	m.remembered = append(m.remembered, remembered{memeID, fileID, unique, p.LibraryPath})
 	return nil
 }
 

@@ -80,7 +80,7 @@ type MediaCache interface {
 	Lookup(ctx context.Context, m memesearch.Meme) (fileID string, ok bool)
 	Enqueue(ms ...memesearch.Meme)
 	Prepare(ctx context.Context, m memesearch.Meme) (mediacache.Photo, error)
-	Remember(ctx context.Context, memeID int64, fileID, fileUniqueID string) error
+	RememberPhoto(ctx context.Context, memeID int64, p mediacache.Photo, fileID, fileUniqueID string) error
 }
 
 var (

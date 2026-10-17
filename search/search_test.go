@@ -322,7 +322,8 @@ func TestMixedAlbumUploadsAndRemembers(t *testing.T) {
 	slices.SortFunc(media.remembered, func(a, b remembered) int { return int(a.memeID - b.memeID) })
 	// The fake numbers album messages in order; memes 1 and 3 are messages 1 and 3.
 	// Meme 2 went by file_id, so there is nothing new to remember.
-	want := []remembered{{1, "fid-1", "uniq-1"}, {3, "fid-3", "uniq-3"}}
+	// The library path travels back so the cache marks that file as uploaded.
+	want := []remembered{{1, "fid-1", "uniq-1", "lib/m1.jpg"}, {3, "fid-3", "uniq-3", "lib/m3.jpg"}}
 	if !slices.Equal(media.remembered, want) {
 		t.Fatalf("remembered = %+v", media.remembered)
 	}

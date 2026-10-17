@@ -14,8 +14,8 @@ import (
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 )
 
-// prepParallel bounds concurrent Prepare calls for one page; the upload
-// limiter and the API rate limit are the real throttles.
+// prepParallel bounds concurrent Prepare calls (file reads or API downloads)
+// for one page, so one search cannot fire a page worth of downloads at once.
 const prepParallel = 4
 
 // item is one meme ready to send: by FileID, or as Data to upload.
@@ -133,7 +133,7 @@ func (m *Module) remember(ctx context.Context, it item, msg *models.Message) {
 		m.log.WarnContext(ctx, "search: sent message has no photo, not remembering", "meme_id", it.meme.ID)
 		return
 	}
-	if err := m.deps.Media.Remember(ctx, it.meme.ID, p.FileID, p.FileUniqueID); err != nil {
+	if err := m.deps.Media.RememberPhoto(ctx, it.meme.ID, it.photo, p.FileID, p.FileUniqueID); err != nil {
 		m.log.WarnContext(ctx, "search: remember file_id failed", "meme_id", it.meme.ID, "err", err)
 		return
 	}

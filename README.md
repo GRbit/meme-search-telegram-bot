@@ -28,9 +28,10 @@ flowchart TD
     API -->|up to 20 memes| C{media cache: file_id known?}
 
     C -->|yes| SEND[send album / inline grid by file_id]
-    C -->|no, private chat| UP[download from API or library folder, upload to cache channel]
+    C -->|no, private chat| UP[bytes from library folder or API, sent in the album; file_id remembered]
     UP --> SEND
     C -->|no, inline| Q[queue a real-time upload; shown on the next query]
+    Q -->|real-time priority, always before warmup| CH
 
     SV --> K{already in the collection? file_unique_id or SHA-256}
     K -->|yes| R1[reply: already in the collection]
@@ -40,7 +41,6 @@ flowchart TD
 
     L[(library folder)] -->|rescan every WARMUP_INTERVAL| W[warmup: upload files without file_id]
     W -->|background priority| CH[(private cache channel)]
-    UP -->|real-time priority, always first| CH
 ```
 
 ### Why a cache channel
@@ -49,9 +49,11 @@ Telegram can send a photo in two ways: upload the bytes, or reuse the `file_id` 
 Inline results accept only a `file_id` (or a public URL, and meme-search media is not public and should not be).
 So the bot needs every meme to exist on Telegram's side before it can offer it inline.
 
-The bot keeps a **private channel** for that. When it needs a meme for the first time, it uploads it to that
-channel once and stores the returned `file_id` in its SQLite database. Every later send, inline or in a private
-chat, reuses the `file_id`: no download from meme-search, no upload, and it is fast.
+The bot keeps a **private channel** for that. When inline search needs a meme Telegram does not have yet, the bot
+uploads it to that channel once and stores the returned `file_id` in its SQLite database. Albums in a private
+chat do not wait for the channel: they carry the bytes (read from the library folder when possible) and the
+bot keeps the `file_id`s Telegram returns. Every later send, inline or in a private chat, reuses the `file_id`:
+no download from meme-search, no upload, and it is fast.
 
 To make inline search complete from day one, the bot also **warms the cache**: it scans the library folder,
 hashes every image (SHA-256), and uploads the files that have no `file_id` yet, slowly, in the background.
@@ -59,13 +61,12 @@ Search results from the API carry the file name, which is how the bot matches th
 folders contain the same file name, the bot downloads that one meme from the API and picks the file whose
 SHA-256 matches.
 
-All uploads to the channel share one queue. Uploads a user is waiting for go to the front of the queue, before
-any warmup upload, and warmup is additionally capped at `WARMUP_UPLOADS_PER_MIN`. Telegram throttles bots that
+All uploads to the channel share one queue. Inline misses go to the front of the queue, before any warmup
+upload, and warmup is additionally capped at `WARMUP_UPLOADS_PER_MIN`. Telegram throttles bots that
 post to one chat too fast (roughly 20 messages per minute), so the first full warmup of a large library takes
 hours. The bot is fully usable meanwhile; memes not uploaded yet just show up in inline results a query later.
 
-Without `CACHE_CHAT_ID` the bot still searches in private chats (it uploads memes directly and remembers their
-`file_id`), but inline mode is off.
+Without `CACHE_CHAT_ID` private chat search works the same way, but inline mode and warmup are off.
 
 ## Setup
 
