@@ -12,6 +12,8 @@ lint: vet
 build:
 	CGO_ENABLED=0 go build -o bin/meme-search-telegram-bot ./cmd/bot
 
-# Reads secrets from .env.local (gitignored).
-run:
-	set -a; . ./.env.local; set +a; go run ./cmd/bot
+# Reads secrets from .env.local (gitignored). Runs the built binary rather than
+# go run: default paths (data/, memes/) are relative to the executable, and go
+# run's executable lives in a temporary build directory.
+run: build
+	set -a; . ./.env.local; set +a; ./bin/meme-search-telegram-bot
