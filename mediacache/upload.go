@@ -24,14 +24,17 @@ import (
 // one bad meme would eat the realtime upload rate.
 const memeRetryAfter = 24 * time.Hour
 
-// job is one upload. Warmup jobs carry no data and read the file when they run,
-// so a long warmup queue holds paths, not images.
+// job is one upload. Jobs carry no bytes while queued: warmup and library
+// jobs read the file and API jobs download the meme only when the worker runs
+// them, so API downloads are bounded by the upload rate (they share the
+// per-token budget with user searches) and a long queue holds no images.
 type job struct {
-	memeID   int64  // 0 for warmup
-	relPath  string // library file the bytes belong to, if any
-	data     []byte
+	memeID   int64           // 0 for warmup
+	meme     memesearch.Meme // realtime: downloaded from the API unless relPath is readable
+	relPath  string          // library file the bytes come from or belong to, if any
 	caption  string
 	filename string
+	data     []byte      // set once downloaded, kept for a retry after 429
 	done     chan result // nil for warmup
 }
 
@@ -96,8 +99,12 @@ func (c *Cache) join(m memesearch.Meme, bounded bool) *call {
 	return cl
 }
 
-// resolveMeme is the slow path of Resolve: library match, download, upload.
+// resolveMeme is the slow path of Resolve. It only consults the database;
+// reading or downloading the bytes waits for the job's turn in the queue.
 func (c *Cache) resolveMeme(ctx context.Context, m memesearch.Meme) (string, error) {
+	if err := notPhoto(m); err != nil {
+		return "", err
+	}
 	mr, ok, err := c.memeRow(ctx, m.ID)
 	if err != nil {
 		return "", err
@@ -113,43 +120,28 @@ func (c *Cache) resolveMeme(ctx context.Context, m memesearch.Meme) (string, err
 	if err != nil {
 		return "", err
 	}
+	j := &job{memeID: m.ID, meme: m, caption: fmt.Sprintf("meme %d", m.ID), filename: photoName(m)}
 	if len(rows) == 1 {
 		r := rows[0]
 		if fid, done, err := c.useRow(ctx, m.ID, r); done {
 			return fid, err
 		}
-		data, err := os.ReadFile(c.absPath(r.relPath))
-		if err == nil {
-			c.log.DebugContext(ctx, "resolve: uploading unique library file", "meme_id", m.ID, "rel_path", r.relPath)
-			return c.upload(ctx, &job{memeID: m.ID, relPath: r.relPath, data: data, caption: r.relPath,
-				filename: path.Base(r.relPath)})
-		}
-		// The next scan drops the row; the API still has the meme.
-		c.log.DebugContext(ctx, "resolve: library file unreadable, using the API", "meme_id", m.ID,
-			"rel_path", r.relPath, "err", err)
+		j.relPath, j.caption, j.filename = r.relPath, r.relPath, path.Base(r.relPath)
 	}
+	c.log.DebugContext(ctx, "resolve: queueing upload", "meme_id", m.ID, "rel_path", j.relPath,
+		"library_candidates", len(rows))
+	return c.upload(ctx, j)
+}
 
-	ct, err := fetchPhoto(ctx, c.api, c.log, m)
-	if err != nil {
-		return "", err
-	}
-	if len(rows) > 1 {
-		sum := sha256.Sum256(ct.Data)
-		for _, r := range rows {
-			if r.sha256 != sum {
-				continue
-			}
-			c.log.DebugContext(ctx, "resolve: name collision settled by hash", "meme_id", m.ID,
-				"rel_path", r.relPath, "candidates", len(rows))
-			if fid, done, err := c.useRow(ctx, m.ID, r); done {
-				return fid, err
-			}
-			return c.upload(ctx, &job{memeID: m.ID, relPath: r.relPath, data: ct.Data, caption: r.relPath,
-				filename: path.Base(r.relPath)})
+// matchRow picks the library row whose content is data.
+func matchRow(rows []libRow, data []byte) (libRow, bool) {
+	sum := sha256.Sum256(data)
+	for _, r := range rows {
+		if r.sha256 == sum {
+			return r, true
 		}
-		c.log.DebugContext(ctx, "resolve: no library file matches the hash", "meme_id", m.ID, "candidates", len(rows))
 	}
-	return c.upload(ctx, &job{memeID: m.ID, data: ct.Data, caption: fmt.Sprintf("meme %d", m.ID), filename: photoName(m)})
+	return libRow{}, false
 }
 
 // useRow settles m from a library row that needs no upload: it has a file_id
@@ -201,31 +193,9 @@ func (c *Cache) work(ctx context.Context) {
 }
 
 func (c *Cache) runJob(ctx context.Context, j *job, p limiter.Priority) {
-	if j.relPath != "" {
-		// Another job may have uploaded this file since this one was queued.
-		r, ok, err := c.libraryRow(ctx, j.relPath)
-		switch {
-		case err != nil:
-			c.log.WarnContext(ctx, "upload: read library row", "rel_path", j.relPath, "err", err)
-		case !ok && j.data == nil:
-			c.log.DebugContext(ctx, "upload: library file gone, skipped", "rel_path", j.relPath)
-			return
-		case ok && (r.fileID != "" || r.failed):
-			c.log.DebugContext(ctx, "upload: already settled, skipped", "rel_path", j.relPath, "failed", r.failed)
-			if j.memeID != 0 {
-				fid, _, err := c.useRow(ctx, j.memeID, r)
-				j.finish(result{fileID: fid, uniqueID: r.fileUniqueID, err: err})
-			}
-			return
-		}
-	}
-	data := j.data
-	if data == nil {
-		var err error
-		if data, err = os.ReadFile(c.absPath(j.relPath)); err != nil {
-			c.log.DebugContext(ctx, "upload: cannot read library file, skipped", "rel_path", j.relPath, "err", err)
-			return
-		}
+	data, ok := c.jobData(ctx, j)
+	if !ok {
+		return
 	}
 
 	start := time.Now()
@@ -282,6 +252,78 @@ func (c *Cache) runJob(ctx context.Context, j *job, p limiter.Priority) {
 		log.WarnContext(ctx, "upload failed", "err", err)
 		j.finish(result{err: fmt.Errorf("mediacache: upload: %w", err)})
 	}
+}
+
+// jobData reads or downloads the bytes of j. ok is false when the job is
+// settled without an upload; j is finished then.
+func (c *Cache) jobData(ctx context.Context, j *job) (data []byte, ok bool) {
+	if j.data != nil {
+		return j.data, true
+	}
+	if j.relPath != "" {
+		if c.settledRow(ctx, j) {
+			return nil, false
+		}
+		data, err := os.ReadFile(c.absPath(j.relPath))
+		if err == nil {
+			return data, true
+		}
+		if j.done == nil {
+			c.log.DebugContext(ctx, "upload: cannot read library file, skipped", "rel_path", j.relPath, "err", err)
+			return nil, false
+		}
+		// The next scan drops the row; the API still has the meme.
+		c.log.DebugContext(ctx, "upload: library file unreadable, using the API", "meme_id", j.memeID,
+			"rel_path", j.relPath, "err", err)
+		j.relPath, j.caption, j.filename = "", fmt.Sprintf("meme %d", j.memeID), photoName(j.meme)
+	}
+	ct, err := fetchPhoto(ctx, c.api, c.log, j.meme)
+	if err != nil {
+		j.finish(result{err: err})
+		return nil, false
+	}
+	j.data = ct.Data
+	rows, err := c.libraryByName(ctx, j.meme.Filename)
+	if err != nil {
+		c.log.WarnContext(ctx, "upload: library lookup", "meme_id", j.memeID, "err", err)
+	}
+	if len(rows) > 1 {
+		r, found := matchRow(rows, ct.Data)
+		if !found {
+			c.log.DebugContext(ctx, "upload: no library file matches the hash", "meme_id", j.memeID, "candidates", len(rows))
+			return j.data, true
+		}
+		c.log.DebugContext(ctx, "upload: name collision settled by hash", "meme_id", j.memeID,
+			"rel_path", r.relPath, "candidates", len(rows))
+		if fid, done, err := c.useRow(ctx, j.memeID, r); done {
+			j.finish(result{fileID: fid, uniqueID: r.fileUniqueID, err: err})
+			return nil, false
+		}
+		j.relPath, j.caption, j.filename = r.relPath, r.relPath, path.Base(r.relPath)
+	}
+	return j.data, true
+}
+
+// settledRow reports whether j's library file needs no upload any more:
+// another job uploaded it since this one was queued, it failed, or (for
+// warmup) it is gone. A realtime job is finished from the row.
+func (c *Cache) settledRow(ctx context.Context, j *job) bool {
+	r, ok, err := c.libraryRow(ctx, j.relPath)
+	switch {
+	case err != nil:
+		c.log.WarnContext(ctx, "upload: read library row", "rel_path", j.relPath, "err", err)
+	case !ok && j.done == nil:
+		c.log.DebugContext(ctx, "upload: library file gone, skipped", "rel_path", j.relPath)
+		return true
+	case ok && (r.fileID != "" || r.failed):
+		c.log.DebugContext(ctx, "upload: already settled, skipped", "rel_path", j.relPath, "failed", r.failed)
+		if j.memeID != 0 {
+			fid, _, err := c.useRow(ctx, j.memeID, r)
+			j.finish(result{fileID: fid, uniqueID: r.fileUniqueID, err: err})
+		}
+		return true
+	}
+	return false
 }
 
 // stored records a successful upload on the library row and the meme.

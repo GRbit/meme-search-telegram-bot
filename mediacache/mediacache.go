@@ -5,9 +5,14 @@
 // inline results accept nothing but a file_id or a public URL. The cache keeps a
 // private cache channel as upload target, indexes the library folder (base name
 // and SHA-256 per file) so API results can be matched to files without
-// downloading them, and warms the channel in the background. All uploads to the
-// channel go through one rate limiter in which real-time uploads always jump
-// ahead of warmup uploads.
+// downloading them, and warms the channel in the background.
+//
+// Two paths reach Telegram. A user waiting for a private chat album gets bytes
+// from Prepare and never waits for the channel; the file_ids the album send
+// returns are stored with RememberPhoto. The cache channel serves only what
+// has no chat to be sent to: inline misses (Enqueue, Resolve) at real-time
+// priority and warmup at background priority, through one rate limiter in
+// which real-time jobs always jump ahead of warmup.
 package mediacache
 
 import (
@@ -301,8 +306,11 @@ func (c *Cache) lookupErr(ctx context.Context, m memesearch.Meme, err error) {
 
 // Resolve returns a file_id for m, uploading it to the cache channel with
 // real-time priority if needed; it blocks until the upload is done or ctx ends.
+// It waits behind other real-time uploads and the channel rate limit, so it is
+// for inline misses, not albums: those use Prepare.
 //
-// Concurrent Resolve and Enqueue calls for one meme share a single upload.
+// Concurrent Resolve and Enqueue calls for one meme share a single upload. The
+// bytes are read or downloaded only when the upload's turn comes.
 func (c *Cache) Resolve(ctx context.Context, m memesearch.Meme) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -361,8 +369,10 @@ func (c *Cache) Enqueue(ms ...memesearch.Meme) {
 	}
 }
 
-// Remember records the file_id Telegram returned when m was sent elsewhere, for
-// example as bytes in a private chat album when no cache channel exists.
+// Remember records the file_id Telegram returned when m was sent elsewhere.
+//
+// After sending a Photo from Prepare, use RememberPhoto instead: it also
+// records the library file the bytes came from.
 func (c *Cache) Remember(ctx context.Context, memeID int64, fileID, fileUniqueID string) error {
 	if fileID == "" {
 		return errors.New("mediacache: remember: empty file_id")

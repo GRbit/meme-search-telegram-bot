@@ -2,7 +2,9 @@ package mediacache
 
 import (
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 )
@@ -19,25 +21,89 @@ func (e *env) prepare(m memesearch.Meme) Photo {
 	return p
 }
 
-func TestPrepareWithCacheChatResolves(t *testing.T) {
-	e := newEnv(t, Config{CacheChatID: chatID})
-	e.api.content[1] = []byte("one")
+func TestPrepareWithCacheChatSendsBytesNotQueue(t *testing.T) {
+	// UploadsPerMin 1 and a used-up window: anything going through the queue
+	// would block, so returning at all proves Prepare bypasses it.
+	e := newEnv(t, Config{CacheChatID: chatID, UploadsPerMin: 1, WarmupUploadsPerMin: 1})
+	e.file("a/uniq.jpg", "local uniq")
+	e.scan()
+	e.api.content[1] = []byte("used the window")
+	e.api.content[2] = []byte("api bytes")
 	e.run()
-	if p := e.prepare(memesearch.Meme{ID: 1, Filename: "one.jpg"}); p.FileID != "fid-1" {
-		t.Fatalf("Prepare = %+v, want the uploaded file_id", p)
+	e.resolve(memesearch.Meme{ID: 1})
+	sentBefore := len(e.sender.sent())
+
+	if p := e.prepare(memesearch.Meme{ID: 2, Filename: "far.jpg"}); string(p.Data) != "api bytes" || p.LibraryPath != "" {
+		t.Fatalf("Prepare = %+v, want API bytes", p)
 	}
-	if p := e.prepare(memesearch.Meme{ID: 1, Filename: "one.jpg"}); p.FileID != "fid-1" || len(e.sender.sent()) != 1 {
-		t.Fatalf("second Prepare = %+v after %d uploads", p, len(e.sender.sent()))
+	if p := e.prepare(memesearch.Meme{ID: 3, Filename: "uniq.jpg"}); string(p.Data) != "local uniq" || p.LibraryPath != "a/uniq.jpg" {
+		t.Fatalf("Prepare = %+v, want library bytes", p)
+	}
+	if n := len(e.sender.sent()); n != sentBefore {
+		t.Fatalf("Prepare uploaded to the cache chat (%d sends)", n-sentBefore)
+	}
+	if e.c.queue.Len(0) != 0 || e.c.queue.Len(1) != 0 {
+		t.Fatal("Prepare queued an upload")
 	}
 }
 
-func TestPrepareFallsBackToBytesWhenStopped(t *testing.T) {
+func TestRememberPhotoRecordsLibraryRow(t *testing.T) {
 	e := newEnv(t, Config{CacheChatID: chatID})
-	e.api.content[1] = []byte("one")
-	stop := e.run()
-	stop()
-	if p := e.prepare(memesearch.Meme{ID: 1, Filename: "one.jpg"}); string(p.Data) != "one" || p.Name != "one.jpg" {
-		t.Fatalf("Prepare = %+v, want API bytes", p)
+	e.file("a/uniq.jpg", "local uniq")
+	e.file("a/dup.jpg", "dup one")
+	e.file("b/dup.jpg", "dup two")
+	if st := e.scan(); st.pending != 3 {
+		t.Fatalf("pending = %d, want 3", st.pending)
+	}
+	e.api.content[2] = []byte("dup two")
+	ctx := t.Context()
+	p1 := e.prepare(memesearch.Meme{ID: 1, Filename: "uniq.jpg"})
+	p2 := e.prepare(memesearch.Meme{ID: 2, Filename: "dup.jpg"})
+	if p2.LibraryPath != "b/dup.jpg" {
+		t.Fatalf("collision not settled by hash: %+v", p2)
+	}
+	if err := e.c.RememberPhoto(ctx, 1, p1, "fid-u", "uniq-u"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.c.RememberPhoto(ctx, 2, p2, "fid-d", "uniq-d"); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.libRow("a/uniq.jpg"); r.fileID != "fid-u" || r.fileUniqueID != "uniq-u" {
+		t.Fatalf("row = %+v", r)
+	}
+	if st := e.scan(); st.pending != 1 {
+		t.Fatalf("pending = %d, want only a/dup.jpg", st.pending)
+	}
+	if ok, _ := e.c.KnownUniqueID(ctx, "uniq-d"); !ok {
+		t.Fatal("file_unique_id of the sent library file unknown")
+	}
+	if got, ok := e.c.Lookup(ctx, memesearch.Meme{ID: 2, Filename: "dup.jpg"}); !ok || got != "fid-d" {
+		t.Fatalf("Lookup = %q, %v", got, ok)
+	}
+	if err := e.c.RememberPhoto(ctx, 3, Photo{Data: []byte("x")}, "", ""); err == nil {
+		t.Fatal("empty file_id accepted")
+	}
+}
+
+func TestEnqueueDownloadsOnlyWhenTheJobRuns(t *testing.T) {
+	e := newEnv(t, Config{CacheChatID: chatID, UploadsPerMin: 1, WarmupUploadsPerMin: 1})
+	const n = 4
+	for i := int64(1); i <= n; i++ {
+		e.api.content[i] = []byte{byte(i)}
+	}
+	e.run()
+	for i := int64(1); i <= n; i++ {
+		e.c.Enqueue(memesearch.Meme{ID: i})
+	}
+	for turn := 1; turn <= n; turn++ {
+		eventually(t, fmt.Sprintf("upload %d", turn), func() bool { return len(e.sender.sent()) == turn })
+		if turn < n && !e.clk.WaitForWaiters(1, 5*time.Second) {
+			t.Fatal("queue not waiting for the rate limit")
+		}
+		if got := e.api.calls(); got != turn {
+			t.Fatalf("after %d uploads: %d API downloads, want %d", turn, got, turn)
+		}
+		e.clk.Advance(time.Minute)
 	}
 }
 
@@ -98,6 +164,9 @@ func TestDirect(t *testing.T) {
 		t.Fatal("Direct Lookup hit")
 	}
 	if err := d.Remember(ctx, 1, "f", "u"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.RememberPhoto(ctx, 1, Photo{Data: []byte("x")}, "f", "u"); err != nil {
 		t.Fatal(err)
 	}
 	p, err := d.Prepare(ctx, memesearch.Meme{ID: 1, Filename: "x.png"})
