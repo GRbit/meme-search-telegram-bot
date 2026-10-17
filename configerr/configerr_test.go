@@ -23,3 +23,13 @@ func TestFields(t *testing.T) {
 		t.Fatal("nil error must yield nothing")
 	}
 }
+
+// Module constructors return fmt.Errorf("search: %w", cfg.Validate()); every
+// field inside that wrapped join must still be found.
+func TestFieldsInsideWrappedJoin(t *testing.T) {
+	err := fmt.Errorf("search: %w", errors.Join(&Field{Name: "A"}, &Field{Name: "B"}))
+	fields, rest := Fields(err)
+	if len(fields) != 2 || len(rest) != 0 {
+		t.Fatalf("fields = %d, rest = %v; want 2 fields", len(fields), rest)
+	}
+}
