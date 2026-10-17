@@ -1,0 +1,6 @@
+saver.saved: "Saved."
+saver.saved_album: "Saved {{.Count}} of {{.Total}}."
+saver.already_in_collection: "This meme is already in the collection."
+saver.duplicate: "Already saved."
+saver.unsupported: "Only photos and image files can be saved."
+saver.error: "Could not save, please try again later."

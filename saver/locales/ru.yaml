@@ -1,0 +1,6 @@
+saver.saved: "Сохранено."
+saver.saved_album: "Сохранено {{.Count}} из {{.Total}}."
+saver.already_in_collection: "Этот мем уже есть в коллекции."
+saver.duplicate: "Уже сохранено."
+saver.unsupported: "Сохранять можно только фото и картинки."
+saver.error: "Не удалось сохранить, попробуй позже."

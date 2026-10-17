@@ -1,0 +1,11 @@
+# Message ids are prefixed with the module name. Templates use Go text/template.
+search.start: "Send me any text and I will find memes about it. In any chat, type @{{.BotUsername}} and a query."
+search.help: "Send a text to search. Use the buttons under the results to see more. Inline: type @{{.BotUsername}} query in any chat."
+search.inline_off: "Inline mode is not configured on this bot."
+search.no_results: "Nothing found for \"{{.Query}}\"."
+search.query_too_long: "The query is too long, the limit is {{.Max}} characters."
+search.error: "Search failed, please try again later."
+search.page: "Page {{.Page}} of {{.Pages}}"
+search.more: "More"
+search.expired: "These results expired, please search again."
+search.similar: "Similar {{.N}}"

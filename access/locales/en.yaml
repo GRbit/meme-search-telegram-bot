@@ -1,0 +1,3 @@
+access.limit_user: "You have used all {{.Limit}} searches for today. Ask {{.Admin}} for more."
+access.limit_total: "The bot has reached its daily search limit. Ask {{.Admin}} for access."
+access.public_off: "Search is available to approved users only. Ask {{.Admin}} for access."
