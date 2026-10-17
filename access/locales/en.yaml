@@ -1,3 +1,11 @@
-access.limit_user: "You have used all {{.Limit}} searches for today. Ask {{.Admin}} for more."
-access.limit_total: "The bot has reached its daily search limit. Ask {{.Admin}} for access."
-access.public_off: "Search is available to approved users only. Ask {{.Admin}} for access."
+# Message ids are prefixed with the module name. Templates use Go text/template.
+# .Admin may be empty, so the admin sentence is conditional. limit_user is plural on .Count (the daily limit).
+access.limit_user:
+  one: "You have used your {{.Count}} search for today.{{if .Admin}} Ask {{.Admin}} for more.{{end}}"
+  other: "You have used all {{.Count}} searches for today.{{if .Admin}} Ask {{.Admin}} for more.{{end}}"
+access.limit_total: "The bot has reached its daily search limit, try again tomorrow.{{if .Admin}} Ask {{.Admin}} for access.{{end}}"
+access.public_off: "Search is available to approved users only.{{if .Admin}} Ask {{.Admin}} for access.{{end}}"
+# Short forms for the inline results button; tapping it opens the bot chat with the full text.
+access.limit_user_short: "Daily search limit reached"
+access.limit_total_short: "The bot's daily limit is reached"
+access.public_off_short: "Search is for approved users only"

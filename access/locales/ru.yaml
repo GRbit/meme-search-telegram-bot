@@ -1,3 +1,13 @@
-access.limit_user: "Ты использовал все {{.Limit}} поисков на сегодня. Напиши {{.Admin}}, если нужно больше."
-access.limit_total: "Бот исчерпал дневной лимит поисков. Напиши {{.Admin}}, чтобы получить доступ."
-access.public_off: "Поиск доступен только одобренным пользователям. Напиши {{.Admin}}, чтобы получить доступ."
+# Message ids are prefixed with the module name. Templates use Go text/template.
+# .Admin may be empty, so the admin sentence is conditional. limit_user is plural on .Count (the daily limit).
+access.limit_user:
+  one: "Твой дневной лимит исчерпан: {{.Count}} поиск.{{if .Admin}} Напиши {{.Admin}}, если нужно больше.{{end}}"
+  few: "Твой дневной лимит исчерпан: {{.Count}} поиска.{{if .Admin}} Напиши {{.Admin}}, если нужно больше.{{end}}"
+  many: "Твой дневной лимит исчерпан: {{.Count}} поисков.{{if .Admin}} Напиши {{.Admin}}, если нужно больше.{{end}}"
+  other: "Твой дневной лимит исчерпан: {{.Count}} поиска.{{if .Admin}} Напиши {{.Admin}}, если нужно больше.{{end}}"
+access.limit_total: "Бот исчерпал дневной лимит поисков, попробуй завтра.{{if .Admin}} Напиши {{.Admin}}, чтобы получить доступ.{{end}}"
+access.public_off: "Поиск доступен только одобренным пользователям.{{if .Admin}} Напиши {{.Admin}}, чтобы получить доступ.{{end}}"
+# Short forms for the inline results button; tapping it opens the bot chat with the full text.
+access.limit_user_short: "Дневной лимит поисков исчерпан"
+access.limit_total_short: "Общий дневной лимит бота исчерпан"
+access.public_off_short: "Поиск только для одобренных"
