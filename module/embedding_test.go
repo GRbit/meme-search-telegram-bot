@@ -16,6 +16,7 @@ import (
 
 	"github.com/grbit/meme-search-telegram-bot/access"
 	"github.com/grbit/meme-search-telegram-bot/i18n"
+	"github.com/grbit/meme-search-telegram-bot/mediacache"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 	"github.com/grbit/meme-search-telegram-bot/module"
 	"github.com/grbit/meme-search-telegram-bot/saver"
@@ -56,7 +57,7 @@ func TestModulesShareOneBot(t *testing.T) {
 	}
 	api := &fakeAPI{}
 	srch, err := search.New(search.Config{}, search.Deps{
-		API: api, Media: noCache{}, I18n: bundle,
+		API: api, Media: mediacache.NewDirect(api), I18n: bundle,
 		Middlewares: []bot.Middleware{acc.Middleware(search.Chargeable)},
 	})
 	if err != nil {
@@ -113,17 +114,6 @@ func (f *fakeAPI) queries() []string {
 	defer f.mu.Unlock()
 	return append([]string(nil), f.qs...)
 }
-
-// noCache is a host without a cache channel.
-type noCache struct{}
-
-func (noCache) UploadsEnabled() bool                                   { return false }
-func (noCache) Lookup(context.Context, memesearch.Meme) (string, bool) { return "", false }
-func (noCache) Resolve(context.Context, memesearch.Meme) (string, error) {
-	return "", context.Canceled
-}
-func (noCache) Enqueue(...memesearch.Meme)                            {}
-func (noCache) Remember(context.Context, int64, string, string) error { return nil }
 
 // fakeTelegram answers every Bot API method with a generic message and counts calls.
 type fakeTelegram struct {

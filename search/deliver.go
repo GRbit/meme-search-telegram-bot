@@ -3,28 +3,29 @@ package search
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/grbit/meme-search-telegram-bot/mediacache"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 )
 
-// prepParallel bounds concurrent Resolve/Content calls for one page; the
-// upload limiter and the API rate limit are the real throttles.
+// prepParallel bounds concurrent Prepare calls for one page; the upload
+// limiter and the API rate limit are the real throttles.
 const prepParallel = 4
 
-// item is one meme ready to send: by file_id, or as bytes to upload.
+// item is one meme ready to send: by FileID, or as Data to upload.
 type item struct {
-	meme   memesearch.Meme
-	fileID string
-	data   []byte
+	meme  memesearch.Meme
+	photo mediacache.Photo
 }
 
 // deliver sends ms to chat and returns how many were sent. Memes that cannot
-// be fetched or that Telegram rejects are skipped and logged.
+// be prepared or that Telegram rejects are skipped and logged.
 func (m *Module) deliver(ctx context.Context, b *bot.Bot, chat int64, ms []memesearch.Meme) int {
 	items := m.prepare(ctx, ms)
 	if len(items) == 0 {
@@ -73,25 +74,18 @@ func (m *Module) prepare(ctx context.Context, ms []memesearch.Meme) []item {
 }
 
 func (m *Module) prepareOne(ctx context.Context, meme memesearch.Meme) *item {
-	if m.deps.Media.UploadsEnabled() {
-		fid, err := m.deps.Media.Resolve(ctx, meme)
-		if err != nil {
-			m.log.WarnContext(ctx, "search: resolve failed, skipping meme", "meme_id", meme.ID, "err", err)
-			return nil
-		}
-		return &item{meme: meme, fileID: fid}
-	}
-	if fid, ok := m.deps.Media.Lookup(ctx, meme); ok {
-		m.log.DebugContext(ctx, "search: media cache hit", "meme_id", meme.ID)
-		return &item{meme: meme, fileID: fid}
-	}
-	m.log.DebugContext(ctx, "search: media cache miss, fetching content", "meme_id", meme.ID)
-	c, err := m.deps.API.Content(ctx, meme.ID)
-	if err != nil {
-		m.log.WarnContext(ctx, "search: content fetch failed, skipping meme", "meme_id", meme.ID, "err", err)
+	p, err := m.deps.Media.Prepare(ctx, meme)
+	switch {
+	case errors.Is(err, mediacache.ErrNotPhoto):
+		// GIFs and videos in the collection are expected; they just do not fit a photo album.
+		m.log.DebugContext(ctx, "search: not a photo, skipping meme", "meme_id", meme.ID, "err", err)
+		return nil
+	case err != nil:
+		m.log.WarnContext(ctx, "search: prepare failed, skipping meme", "meme_id", meme.ID, "err", err)
 		return nil
 	}
-	return &item{meme: meme, data: c.Data}
+	m.log.DebugContext(ctx, "search: meme prepared", "meme_id", meme.ID, "by_file_id", p.Data == nil, "bytes", len(p.Data))
+	return &item{meme: meme, photo: p}
 }
 
 // albumMedia builds the media group. Uploads get fresh readers on every call
@@ -99,12 +93,13 @@ func (m *Module) prepareOne(ctx context.Context, meme memesearch.Meme) *item {
 func albumMedia(items []item) []models.InputMedia {
 	media := make([]models.InputMedia, len(items))
 	for i, it := range items {
-		if it.data == nil {
-			media[i] = &models.InputMediaPhoto{Media: it.fileID}
+		if it.photo.Data == nil {
+			media[i] = &models.InputMediaPhoto{Media: it.photo.FileID}
 			continue
 		}
+		// The part name only has to be unique within the request; Photo.Name may repeat or hold odd characters.
 		name := fmt.Sprintf("meme%d", i)
-		media[i] = &models.InputMediaPhoto{Media: "attach://" + name, MediaAttachment: bytes.NewReader(it.data)}
+		media[i] = &models.InputMediaPhoto{Media: "attach://" + name, MediaAttachment: bytes.NewReader(it.photo.Data)}
 	}
 	return media
 }
@@ -112,9 +107,9 @@ func albumMedia(items []item) []models.InputMedia {
 func (m *Module) sendSingles(ctx context.Context, b *bot.Bot, chat int64, items []item) int {
 	sent := 0
 	for _, it := range items {
-		var photo models.InputFile = &models.InputFileString{Data: it.fileID}
-		if it.data != nil {
-			photo = &models.InputFileUpload{Filename: uploadName(it.meme), Data: bytes.NewReader(it.data)}
+		var photo models.InputFile = &models.InputFileString{Data: it.photo.FileID}
+		if it.photo.Data != nil {
+			photo = &models.InputFileUpload{Filename: uploadName(it), Data: bytes.NewReader(it.photo.Data)}
 		}
 		msg, err := b.SendPhoto(ctx, &bot.SendPhotoParams{ChatID: chat, Photo: photo})
 		if err != nil {
@@ -130,7 +125,7 @@ func (m *Module) sendSingles(ctx context.Context, b *bot.Bot, chat int64, items 
 
 // remember stores the file_id of an uploaded item; items sent by file_id are already known.
 func (m *Module) remember(ctx context.Context, it item, msg *models.Message) {
-	if it.data == nil || msg == nil {
+	if it.photo.Data == nil || msg == nil {
 		return
 	}
 	p, ok := largestPhoto(msg.Photo)
@@ -158,9 +153,9 @@ func largestPhoto(ps []models.PhotoSize) (models.PhotoSize, bool) {
 	return best, true
 }
 
-func uploadName(meme memesearch.Meme) string {
-	if meme.Filename != "" {
-		return meme.Filename
+func uploadName(it item) string {
+	if it.photo.Name != "" {
+		return it.photo.Name
 	}
-	return fmt.Sprintf("meme%d.jpg", meme.ID)
+	return fmt.Sprintf("meme%d.jpg", it.meme.ID)
 }

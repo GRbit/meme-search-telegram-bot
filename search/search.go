@@ -17,6 +17,7 @@ import (
 
 	"github.com/grbit/meme-search-telegram-bot/configerr"
 	"github.com/grbit/meme-search-telegram-bot/i18n"
+	"github.com/grbit/meme-search-telegram-bot/mediacache"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 	"github.com/grbit/meme-search-telegram-bot/module"
 )
@@ -68,14 +69,25 @@ const (
 	defaultPageTTL        = time.Hour
 )
 
-// MediaCache is what the module needs from mediacache.Cache.
+// MediaCache is what the module needs from mediacache.Cache; mediacache.Direct
+// implements it for hosts without a media cache.
+//
+// How a meme reaches Telegram (file_id, upload to the cache channel, library
+// bytes, API bytes) is the cache's decision: albums use Prepare and report
+// uploaded bytes back with Remember, inline uses Lookup and Enqueue, and
+// UploadsEnabled only decides whether inline mode is registered.
 type MediaCache interface {
 	UploadsEnabled() bool
 	Lookup(ctx context.Context, m memesearch.Meme) (fileID string, ok bool)
-	Resolve(ctx context.Context, m memesearch.Meme) (string, error)
 	Enqueue(ms ...memesearch.Meme)
+	Prepare(ctx context.Context, m memesearch.Meme) (mediacache.Photo, error)
 	Remember(ctx context.Context, memeID int64, fileID, fileUniqueID string) error
 }
+
+var (
+	_ MediaCache = (*mediacache.Cache)(nil)
+	_ MediaCache = (*mediacache.Direct)(nil)
+)
 
 // Deps are the collaborators the host passes in.
 type Deps struct {
@@ -109,7 +121,7 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	case deps.API == nil:
 		return nil, errors.New("search: Deps.API is nil")
 	case deps.Media == nil:
-		return nil, errors.New("search: Deps.Media is nil")
+		return nil, errors.New("search: Deps.Media is nil (use mediacache.NewDirect(api) to run without a media cache)")
 	case deps.I18n == nil:
 		return nil, errors.New("search: Deps.I18n is nil")
 	}

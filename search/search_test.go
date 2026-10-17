@@ -15,6 +15,7 @@ import (
 
 	"github.com/grbit/meme-search-telegram-bot/configerr"
 	"github.com/grbit/meme-search-telegram-bot/i18n"
+	"github.com/grbit/meme-search-telegram-bot/mediacache"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 )
 
@@ -62,6 +63,9 @@ func TestNewRequiresDeps(t *testing.T) {
 			t.Fatalf("missing %s accepted", name)
 		}
 	}
+	if _, err := New(Config{}, Deps{API: full.API, I18n: bundle}); err == nil || !strings.Contains(err.Error(), "mediacache.NewDirect") {
+		t.Fatalf("nil Media error does not point to NewDirect: %v", err)
+	}
 	if _, err := New(Config{ResultsPerPage: 50}, full); err == nil {
 		t.Fatal("invalid config accepted")
 	}
@@ -88,7 +92,7 @@ func TestTextSearchAlbum(t *testing.T) {
 		t.Fatalf("album has %d items, want 5", len(media0))
 	}
 	for i, m := range media0 {
-		if want := fmt.Sprintf("resolved-%d", i+1); m["media"] != want || m["type"] != "photo" {
+		if want := fmt.Sprintf("prep-%d", i+1); m["media"] != want || m["type"] != "photo" {
 			t.Fatalf("item %d = %v, want %s (order kept)", i, m, want)
 		}
 	}
@@ -132,7 +136,7 @@ func TestTextSearchSingleResult(t *testing.T) {
 		t.Fatal("album for one result")
 	}
 	ph := e.tg.byMethod("sendPhoto")
-	if len(ph) != 1 || ph[0].fields["photo"] != "resolved-1" || ph[0].fields["chat_id"] != fmt.Sprint(chatID) {
+	if len(ph) != 1 || ph[0].fields["photo"] != "prep-1" || ph[0].fields["chat_id"] != fmt.Sprint(chatID) {
 		t.Fatalf("sendPhoto = %+v", ph)
 	}
 }
@@ -221,7 +225,7 @@ func TestPagingServesFromMemory(t *testing.T) {
 	if len(groups) != 2 {
 		t.Fatalf("methods = %v", e.tg.methods())
 	}
-	if first := mediaOf(t, groups[1])[0]["media"]; first != "resolved-6" {
+	if first := mediaOf(t, groups[1])[0]["media"]; first != "prep-6" {
 		t.Fatalf("page 2 starts with %v", first)
 	}
 	edits := e.tg.byMethod("editMessageReplyMarkup")
@@ -287,21 +291,21 @@ func TestSimilarCallbackAnswered(t *testing.T) {
 	}
 }
 
-func TestNoCachePathUploadsAndRemembers(t *testing.T) {
-	api := &fakeAPI{results: memeRange(3), content: map[int64][]byte{1: []byte("one"), 3: []byte("three")}}
-	media := &fakeMedia{known: map[int64]string{2: "known-2"}}
+func TestMixedAlbumUploadsAndRemembers(t *testing.T) {
+	api := &fakeAPI{results: memeRange(3)}
+	media := &fakeMedia{data: map[int64][]byte{1: []byte("one"), 3: []byte("three")}}
 	e := newEnv(t, api, media)
 	e.process(textUpdate("x"))
 
-	if len(media.resolved) != 0 {
-		t.Fatal("Resolve used without uploads")
+	if len(api.contents) != 0 {
+		t.Fatal("search fetched content itself")
 	}
 	g := e.tg.byMethod("sendMediaGroup")
 	if len(g) != 1 {
 		t.Fatalf("methods = %v", e.tg.methods())
 	}
 	items := mediaOf(t, g[0])
-	if len(items) != 3 || items[1]["media"] != "known-2" {
+	if len(items) != 3 || items[1]["media"] != "prep-2" {
 		t.Fatalf("items = %v", items)
 	}
 	for _, i := range []int{0, 2} {
@@ -317,25 +321,48 @@ func TestNoCachePathUploadsAndRemembers(t *testing.T) {
 	}
 	slices.SortFunc(media.remembered, func(a, b remembered) int { return int(a.memeID - b.memeID) })
 	// The fake numbers album messages in order; memes 1 and 3 are messages 1 and 3.
+	// Meme 2 went by file_id, so there is nothing new to remember.
 	want := []remembered{{1, "fid-1", "uniq-1"}, {3, "fid-3", "uniq-3"}}
 	if !slices.Equal(media.remembered, want) {
 		t.Fatalf("remembered = %+v", media.remembered)
 	}
 }
 
+func TestSinglePhotoFromData(t *testing.T) {
+	media := &fakeMedia{data: map[int64][]byte{1: []byte("one")}}
+	e := newEnv(t, &fakeAPI{results: memeRange(1)}, media)
+	e.process(textUpdate("x"))
+	ph := e.tg.byMethod("sendPhoto")
+	if len(ph) != 1 || string(ph[0].files["photo"]) != "one" {
+		t.Fatalf("sendPhoto = %+v", ph)
+	}
+	if len(media.remembered) != 1 || media.remembered[0].memeID != 1 {
+		t.Fatalf("remembered = %+v", media.remembered)
+	}
+}
+
 func TestSkipsMemesThatFail(t *testing.T) {
-	api := &fakeAPI{results: memeRange(3)}
-	media := &fakeMedia{uploads: true, resolveErr: map[int64]error{2: errors.New("upload failed")}}
-	e := newEnv(t, api, media)
+	api := &fakeAPI{results: memeRange(4)}
+	logs := &levelCounter{}
+	media := &fakeMedia{uploads: true, prepErr: map[int64]error{
+		2: errors.New("upload failed"),
+		4: fmt.Errorf("%w: meme 4 is image/gif", mediacache.ErrNotPhoto),
+	}}
+	e := newEnv(t, api, media, withLog(logs))
 	e.process(textUpdate("x"))
 	items := mediaOf(t, e.tg.byMethod("sendMediaGroup")[0])
-	if len(items) != 2 || items[0]["media"] != "resolved-1" || items[1]["media"] != "resolved-3" {
+	if len(items) != 2 || items[0]["media"] != "prep-1" || items[1]["media"] != "prep-3" {
 		t.Fatalf("items = %v", items)
+	}
+	// Only the real failure warns; a GIF in the results is expected, not a problem.
+	if n := logs.warnings(); n != 1 {
+		t.Fatalf("warnings = %d, want 1", n)
 	}
 }
 
 func TestNothingDeliverableSendsError(t *testing.T) {
-	e := newEnv(t, &fakeAPI{results: memeRange(2)}, &fakeMedia{}) // no content -> every fetch fails
+	media := &fakeMedia{prepErr: map[int64]error{1: errors.New("a"), 2: errors.New("b")}}
+	e := newEnv(t, &fakeAPI{results: memeRange(2)}, media)
 	e.process(textUpdate("x"))
 	msgs := e.tg.byMethod("sendMessage")
 	if len(msgs) != 1 || !strings.Contains(msgs[0].fields["text"], "Search failed") {
@@ -344,8 +371,8 @@ func TestNothingDeliverableSendsError(t *testing.T) {
 }
 
 func TestAlbumRejectedFallsBackToSingles(t *testing.T) {
-	api := &fakeAPI{results: memeRange(3), content: map[int64][]byte{1: []byte("one"), 2: []byte("two"), 3: []byte("three")}}
-	media := &fakeMedia{}
+	api := &fakeAPI{results: memeRange(3)}
+	media := &fakeMedia{data: map[int64][]byte{1: []byte("one"), 2: []byte("two"), 3: []byte("three")}}
 	e := newEnv(t, api, media)
 	e.tg.fail = func(c call) bool {
 		if c.method == "sendMediaGroup" {
@@ -403,8 +430,8 @@ func TestInlineHitsAndMisses(t *testing.T) {
 	if !slices.Equal(media.enqueued, []int64{2, 4}) {
 		t.Fatalf("enqueued = %v", media.enqueued)
 	}
-	if len(media.resolved) != 0 {
-		t.Fatal("inline blocked on Resolve")
+	if len(media.prepared) != 0 {
+		t.Fatal("inline blocked on Prepare")
 	}
 }
 

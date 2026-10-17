@@ -17,6 +17,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/grbit/meme-search-telegram-bot/i18n"
+	"github.com/grbit/meme-search-telegram-bot/mediacache"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 )
 
@@ -144,8 +145,7 @@ type fakeAPI struct {
 	err      error
 	searches []string
 	opts     []memesearch.SearchOptions
-	content  map[int64][]byte
-	contents []int64
+	contents []int64 // search must never fetch content itself
 }
 
 func (a *fakeAPI) Search(_ context.Context, q string, o memesearch.SearchOptions) ([]memesearch.Meme, error) {
@@ -167,11 +167,7 @@ func (a *fakeAPI) Content(_ context.Context, id int64) (memesearch.Content, erro
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.contents = append(a.contents, id)
-	d, ok := a.content[id]
-	if !ok {
-		return memesearch.Content{}, memesearch.ErrNotFound
-	}
-	return memesearch.Content{Data: d, MediaType: "image/jpeg"}, nil
+	return memesearch.Content{}, memesearch.ErrNotFound
 }
 
 func (a *fakeAPI) searchCount() int {
@@ -185,13 +181,15 @@ type remembered struct {
 	fileID, unique string
 }
 
-// fakeMedia implements MediaCache.
+// fakeMedia implements MediaCache. Prepare returns FileID "prep-<id>" unless
+// data or prepErr has an entry for the meme.
 type fakeMedia struct {
 	mu         sync.Mutex
 	uploads    bool
 	known      map[int64]string // Lookup hits
-	resolveErr map[int64]error
-	resolved   []int64
+	data       map[int64][]byte // Prepare returns Data
+	prepErr    map[int64]error
+	prepared   []int64
 	enqueued   []int64
 	remembered []remembered
 }
@@ -205,14 +203,17 @@ func (m *fakeMedia) Lookup(_ context.Context, meme memesearch.Meme) (string, boo
 	return id, ok
 }
 
-func (m *fakeMedia) Resolve(_ context.Context, meme memesearch.Meme) (string, error) {
+func (m *fakeMedia) Prepare(_ context.Context, meme memesearch.Meme) (mediacache.Photo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.resolved = append(m.resolved, meme.ID)
-	if err := m.resolveErr[meme.ID]; err != nil {
-		return "", err
+	m.prepared = append(m.prepared, meme.ID)
+	if err := m.prepErr[meme.ID]; err != nil {
+		return mediacache.Photo{}, err
 	}
-	return fmt.Sprintf("resolved-%d", meme.ID), nil
+	if d, ok := m.data[meme.ID]; ok {
+		return mediacache.Photo{Name: meme.Filename, Data: d}, nil
+	}
+	return mediacache.Photo{FileID: fmt.Sprintf("prep-%d", meme.ID), Name: meme.Filename}, nil
 }
 
 func (m *fakeMedia) Enqueue(ms ...memesearch.Meme) {
@@ -265,6 +266,34 @@ func (c *fakeClock) Add(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.t = c.t.Add(d)
+}
+
+// levelCounter is a slog.Handler counting records at Warn and above.
+type levelCounter struct {
+	mu   sync.Mutex
+	warn int
+}
+
+func (h *levelCounter) Enabled(context.Context, slog.Level) bool { return true }
+func (h *levelCounter) Handle(_ context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelWarn {
+		h.mu.Lock()
+		h.warn++
+		h.mu.Unlock()
+	}
+	return nil
+}
+func (h *levelCounter) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *levelCounter) WithGroup(string) slog.Handler      { return h }
+
+func (h *levelCounter) warnings() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.warn
+}
+
+func withLog(h slog.Handler) envOpt {
+	return func(_ *Config, d *Deps) { d.Log = slog.New(h) }
 }
 
 type env struct {
