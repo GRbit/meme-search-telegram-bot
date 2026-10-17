@@ -16,6 +16,7 @@ import (
 	"syscall"
 
 	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 
 	// TZ must work for a bare binary on a host without zoneinfo, not only in the image.
 	_ "time/tzdata"
@@ -65,9 +66,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	b, err := bot.New(cfg.TelegramToken, bot.WithErrorsHandler(func(err error) {
-		log.Warn("telegram", "err", err)
-	}))
+	b, err := bot.New(cfg.TelegramToken,
+		bot.WithDefaultHandler(unhandled(log)),
+		bot.WithErrorsHandler(func(err error) { log.Warn("telegram", "err", err) }),
+	)
 	if err != nil {
 		return fmt.Errorf("telegram: %w", err)
 	}
@@ -112,6 +114,31 @@ func run() error {
 	b.Start(ctx)
 	log.Info("bot stopped")
 	return nil
+}
+
+// unhandled replaces go-telegram/bot's default handler, which prints every
+// unmatched update (stickers, photos from users who may not save, group chatter)
+// with log.Printf, message text and names included. Only the host may set it.
+func unhandled(log *slog.Logger) bot.HandlerFunc {
+	return func(ctx context.Context, _ *bot.Bot, u *models.Update) {
+		kind, userID := "other", int64(0)
+		switch {
+		case u.Message != nil:
+			kind = "message"
+			if u.Message.From != nil {
+				userID = u.Message.From.ID
+			}
+		case u.EditedMessage != nil:
+			kind = "edited_message"
+		case u.CallbackQuery != nil:
+			kind, userID = "callback_query", u.CallbackQuery.From.ID
+		case u.InlineQuery != nil:
+			kind = "inline_query"
+		case u.ChannelPost != nil:
+			kind = "channel_post"
+		}
+		log.DebugContext(ctx, "update not handled", "update_id", u.ID, "kind", kind, "user_id", userID)
+	}
 }
 
 // exeDir is the base for relative default paths (data/, memes/, config.yml),
