@@ -307,6 +307,9 @@ func (c *Cache) Resolve(ctx context.Context, m memesearch.Meme) (string, error) 
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	if err := notPhoto(m); err != nil {
+		return "", err
+	}
 	if id, ok := c.Lookup(ctx, m); ok {
 		return id, nil
 	}
@@ -336,6 +339,10 @@ func (c *Cache) Enqueue(ms ...memesearch.Meme) {
 		return
 	}
 	for _, m := range ms {
+		if err := notPhoto(m); err != nil {
+			c.log.Debug("enqueue skipped", "meme_id", m.ID, "err", err)
+			continue
+		}
 		if _, ok := c.Lookup(c.life, m); ok {
 			continue
 		}

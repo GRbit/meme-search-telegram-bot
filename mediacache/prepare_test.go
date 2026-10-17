@@ -112,3 +112,28 @@ func TestDirect(t *testing.T) {
 		t.Fatalf("Prepare of a video = %v, want ErrNotPhoto", err)
 	}
 }
+
+// The search response already says a meme is a GIF or a video; downloading it
+// (up to 25 MB, on every inline keystroke) only to reject it must not happen.
+func TestNonPhotoMemesAreNotDownloaded(t *testing.T) {
+	e := newEnv(t, Config{CacheChatID: chatID})
+	e.api.content[4] = []byte("video")
+	e.api.media = map[int64]string{4: "video/mp4"}
+	e.run()
+	for _, mt := range []string{"video/mp4", "image/gif"} {
+		m := memesearch.Meme{ID: 4, Filename: "clip", MediaType: mt}
+		if _, err := e.c.Prepare(t.Context(), m); !errors.Is(err, ErrNotPhoto) {
+			t.Errorf("Prepare(%s) = %v, want ErrNotPhoto", mt, err)
+		}
+		if _, err := e.c.Resolve(t.Context(), m); !errors.Is(err, ErrNotPhoto) {
+			t.Errorf("Resolve(%s) = %v, want ErrNotPhoto", mt, err)
+		}
+		e.c.Enqueue(m)
+		if _, err := NewDirect(e.api).Prepare(t.Context(), m); !errors.Is(err, ErrNotPhoto) {
+			t.Errorf("Direct.Prepare(%s) = %v, want ErrNotPhoto", mt, err)
+		}
+	}
+	if n := e.api.calls(); n != 0 {
+		t.Fatalf("non-photo memes downloaded %d times, want 0", n)
+	}
+}

@@ -34,6 +34,9 @@ type Photo struct {
 // returned as they are: hashing them to pick a library row would yield the
 // same bytes.
 func (c *Cache) Prepare(ctx context.Context, m memesearch.Meme) (Photo, error) {
+	if err := notPhoto(m); err != nil {
+		return Photo{}, err
+	}
 	if id, ok := c.Lookup(ctx, m); ok {
 		return Photo{FileID: id, Name: photoName(m)}, nil
 	}
@@ -74,9 +77,26 @@ func photoName(m memesearch.Meme) string {
 	return fmt.Sprintf("meme-%d.jpg", m.ID)
 }
 
+// notPhoto rejects memes the API already labels as something Telegram cannot
+// send as a photo, before any download. An empty media type is let through and
+// checked again on the downloaded bytes.
+func notPhoto(m memesearch.Meme) error {
+	if m.MediaType == "" || isPhotoType(m.MediaType) {
+		return nil
+	}
+	return fmt.Errorf("%w: meme %d is %s", ErrNotPhoto, m.ID, m.MediaType)
+}
+
+func isPhotoType(mt string) bool {
+	return strings.HasPrefix(mt, "image/") && mt != "image/gif"
+}
+
 // fetchPhoto downloads m and rejects media Telegram cannot send as a photo.
 // GIF counts as not a photo: Telegram turns it into an animation.
 func fetchPhoto(ctx context.Context, api memesearch.Client, log *slog.Logger, m memesearch.Meme) (memesearch.Content, error) {
+	if err := notPhoto(m); err != nil {
+		return memesearch.Content{}, err
+	}
 	start := time.Now()
 	ct, err := api.Content(ctx, m.ID)
 	if err != nil {
@@ -84,7 +104,7 @@ func fetchPhoto(ctx context.Context, api memesearch.Client, log *slog.Logger, m 
 	}
 	log.DebugContext(ctx, "fetched meme content", "meme_id", m.ID, "bytes", len(ct.Data),
 		"media_type", ct.MediaType, "duration", time.Since(start))
-	if !strings.HasPrefix(ct.MediaType, "image/") || ct.MediaType == "image/gif" {
+	if !isPhotoType(ct.MediaType) {
 		return ct, fmt.Errorf("%w: meme %d is %s", ErrNotPhoto, m.ID, ct.MediaType)
 	}
 	return ct, nil
