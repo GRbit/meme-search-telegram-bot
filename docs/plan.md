@@ -54,6 +54,8 @@ base name without directory):
 2. **Inline mode.** `@bot query` in any chat shows a grid of cached photos (`InlineQueryResultCachedPhoto`);
    picking one sends it. Results not yet cached are skipped in that answer and queued for real-time upload, so the
    next query shows them. Inline answers never wait for uploads. Requires `CACHE_CHAT_ID`.
+   An answer with any miss carries a localized "memes are loading" results button (start parameter `loading`,
+   which `/start` treats like no payload) and `cache_time` 1.
 3. **"More" button.** The bot fetches `limit=20` once and keeps the result ids in memory (per search, TTL 1h);
    paging serves the next page from memory, no API call, no limit charge. Expired -> "search again" message.
 4. **"Similar" buttons** (phase 4): vector search with that meme's description as the query (truncated to 200
@@ -207,6 +209,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
 - An expired "More" button answers with a callback popup ("search again"), not a chat message.
 - Access fails open: if the counter store errors, the search is allowed and the error logged at Error.
 - Inline limit denials use `cache_time` 1, because go-telegram/bot drops 0 and Telegram would cache the denial 300s.
+- Inline answers with cache misses also use `cache_time` 1 and show a "memes are loading" button, so an empty or
+  partial grid explains itself and is not replayed after the uploads finish; all-hit answers keep 30s.
 - The saver accepts jpg, png and webp only (the formats meme-search's uploader takes); a second "already saved"
   reply covers duplicates inside the sender's own folder.
 - `srch:s:` is reserved but not charged until phase 4 implements "similar".

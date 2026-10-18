@@ -17,6 +17,10 @@ import (
 
 const inlineCacheSeconds = 30
 
+// loadingStartParam is the /start payload of the "memes are loading" button;
+// handleCommand ignores payloads, so it greets like a plain /start.
+const loadingStartParam = "loading"
+
 func isPrivateText(u *models.Update) bool {
 	return u.Message != nil && u.Message.From != nil && u.Message.Chat.Type == models.ChatTypePrivate &&
 		u.Message.Text != ""
@@ -190,13 +194,13 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 	m.log.DebugContext(ctx, "search: inline", "update", "inline_query", "user_id", user, "query", q,
 		"query_len", utf8.RuneCountInString(q))
 	results := []models.InlineQueryResult{}
+	var misses []memesearch.Meme
 	if ok {
 		found, err := m.deps.API.Search(ctx, q, memesearch.SearchOptions{Mode: m.cfg.Mode, Limit: memesearch.MaxLimit})
 		if err != nil {
 			// Inline answers have no room for an explanation; an empty grid it is.
 			m.log.WarnContext(ctx, "search: inline search failed", "user_id", user, "err", err)
 		}
-		var misses []memesearch.Meme
 		for _, meme := range found {
 			fid, hit := m.deps.Media.Lookup(ctx, meme)
 			if !hit {
@@ -214,9 +218,21 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 		m.log.DebugContext(ctx, "search: inline results", "user_id", user, "count", len(found),
 			"cache_hits", len(results), "cache_misses", len(misses))
 	}
-	_, err := b.AnswerInlineQuery(ctx, &bot.AnswerInlineQueryParams{
+	params := &bot.AnswerInlineQueryParams{
 		InlineQueryID: iq.ID, Results: results, CacheTime: inlineCacheSeconds, IsPersonal: true,
-	})
+	}
+	if len(misses) > 0 {
+		// Without the button an all-miss answer is a blank grid with no
+		// explanation. cache_time 1 because go-telegram/bot drops 0, and a
+		// cached incomplete answer would hide the memes once they are uploaded.
+		loc := m.deps.I18n.Localizer(iq.From.LanguageCode)
+		params.CacheTime = 1
+		params.Button = &models.InlineQueryResultsButton{
+			Text: loc.T("search.inline_loading", nil), StartParameter: loadingStartParam,
+		}
+		m.log.DebugContext(ctx, "search: inline loading button", "user_id", user, "cache_misses", len(misses))
+	}
+	_, err := b.AnswerInlineQuery(ctx, params)
 	if err != nil {
 		m.log.WarnContext(ctx, "search: answer inline query failed", "user_id", user, "err", err)
 	}

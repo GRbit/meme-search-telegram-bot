@@ -65,6 +65,8 @@ All uploads to the channel share one queue. Inline misses go to the front of the
 upload, and warmup is additionally capped at `WARMUP_UPLOADS_PER_MIN`. Telegram throttles bots that
 post to one chat too fast (roughly 20 messages per minute), so the first full warmup of a large library takes
 hours. The bot is fully usable meanwhile; memes not uploaded yet just show up in inline results a query later.
+While some results of an inline query are still uploading, the grid shows a "Memes are loading, try again in a few
+seconds" button above it; tapping it opens the bot's private chat with a plain `/start`.
 
 Without `CACHE_CHAT_ID` private chat search works the same way, but inline mode and warmup are off.
 

@@ -550,3 +550,60 @@ func TestStartWithoutInlineDoesNotAdvertiseIt(t *testing.T) {
 		}
 	}
 }
+
+// A miss means the answer is incomplete: the button tells the user why, and
+// cache_time 1 keeps Telegram from replaying the incomplete grid.
+func TestInlineMissesShowLoadingButton(t *testing.T) {
+	for lang, want := range map[string]string{
+		"en": "Memes are loading, try again in a few seconds",
+		"ru": "Мемы загружаются, попробуй через пару секунд",
+	} {
+		media := &fakeMedia{uploads: true, known: map[int64]string{1: "f1"}}
+		e := newEnv(t, &fakeAPI{results: memeRange(2)}, media)
+		u := inlineUpdate("cat")
+		u.InlineQuery.From.LanguageCode = lang
+		e.process(u)
+		ans := e.tg.byMethod("answerInlineQuery")
+		if len(ans) != 1 {
+			t.Fatalf("%s: methods = %v", lang, e.tg.methods())
+		}
+		var btn map[string]any
+		if err := json.Unmarshal([]byte(ans[0].fields["button"]), &btn); err != nil {
+			t.Fatalf("%s: button %q: %v", lang, ans[0].fields["button"], err)
+		}
+		if btn["text"] != want || btn["start_parameter"] != "loading" {
+			t.Fatalf("%s: button = %v", lang, btn)
+		}
+		if ans[0].fields["cache_time"] != "1" || ans[0].fields["is_personal"] != "true" {
+			t.Fatalf("%s: fields = %v", lang, ans[0].fields)
+		}
+	}
+}
+
+func TestInlineAllHitsNoButton(t *testing.T) {
+	media := &fakeMedia{uploads: true, known: map[int64]string{1: "f1", 2: "f2"}}
+	e := newEnv(t, &fakeAPI{results: memeRange(2)}, media)
+	e.process(inlineUpdate("cat"))
+	ans := e.tg.byMethod("answerInlineQuery")
+	if len(ans) != 1 {
+		t.Fatalf("methods = %v", e.tg.methods())
+	}
+	if _, ok := ans[0].fields["button"]; ok || ans[0].fields["cache_time"] != "30" {
+		t.Fatalf("fields = %v", ans[0].fields)
+	}
+}
+
+// The loading button opens the private chat with /start loading; it must greet
+// exactly like a plain /start.
+func TestStartLoadingPayloadLikePlainStart(t *testing.T) {
+	e := newEnv(t, &fakeAPI{}, &fakeMedia{uploads: true})
+	e.process(textUpdate("/start"))
+	e.process(textUpdate("/start loading"))
+	msgs := e.tg.byMethod("sendMessage")
+	if len(msgs) != 2 || msgs[0].fields["text"] != msgs[1].fields["text"] {
+		t.Fatalf("messages = %+v", msgs)
+	}
+	if Chargeable(textUpdate("/start loading")) {
+		t.Fatal("/start loading is charged")
+	}
+}
