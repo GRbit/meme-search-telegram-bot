@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grbit/meme-search-telegram-bot/mediacache/internal/fakeclock"
+	"github.com/grbit/meme-search-telegram-bot/internal/fakeclock"
 )
 
 type got struct {

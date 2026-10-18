@@ -45,7 +45,8 @@ type Config struct {
 	PageTTL        time.Duration   // how long fetched results stay pageable; 0 means 1h
 	// InlineResults is how many memes one inline query asks for, 1..memesearch.MaxLimit (the API's cap); 0
 	// means 3. Every miss among them is queued for upload, so a small number keeps the queue short.
-	InlineResults int
+	InlineResults  int
+	InlineDebounce time.Duration
 }
 
 // Validate reports every invalid field as a *configerr.Field.
@@ -61,6 +62,9 @@ func (c Config) Validate() error {
 	}
 	if c.PageTTL < 0 {
 		errs = append(errs, &configerr.Field{Name: "PageTTL", Reason: "must not be negative"})
+	}
+	if c.InlineDebounce < 0 {
+		errs = append(errs, &configerr.Field{Name: "InlineDebounce", Reason: "must not be negative (0 disables it)"})
 	}
 	if c.InlineResults < 0 || c.InlineResults > memesearch.MaxLimit {
 		errs = append(errs, &configerr.Field{Name: "InlineResults", Reason: fmt.Sprintf("must be 1..%d (0 means %d)", memesearch.MaxLimit, defaultInlineResults)})
@@ -108,12 +112,14 @@ type Deps struct {
 
 // Module implements module.Module.
 type Module struct {
-	cfg   Config
-	deps  Deps
-	log   *slog.Logger
-	now   func() time.Time
-	pages *pageStore
-	me    botName
+	cfg    Config
+	deps   Deps
+	log    *slog.Logger
+	now    func() time.Time
+	pages  *pageStore
+	me     botName
+	after  func(time.Duration) (<-chan time.Time, func())
+	inline latestQueries
 }
 
 var _ module.Module = (*Module)(nil)
@@ -157,6 +163,7 @@ func New(cfg Config, deps Deps) (*Module, error) {
 		log:   log,
 		now:   now,
 		pages: newPageStore(cfg.PageTTL, maxSessions),
+		after: realAfter,
 	}, nil
 }
 
@@ -175,7 +182,8 @@ func (m *Module) Register(b *bot.Bot) {
 		b.RegisterHandlerMatchFunc(isInline, m.handleInline, mw...)
 	}
 	m.log.Info("search module registered", "inline", inline, "results_per_page", m.cfg.ResultsPerPage,
-		"mode", string(m.cfg.Mode), "page_ttl", m.cfg.PageTTL, "inline_results", m.cfg.InlineResults)
+		"mode", string(m.cfg.Mode), "page_ttl", m.cfg.PageTTL, "inline_results", m.cfg.InlineResults,
+		"inline_debounce", m.cfg.InlineDebounce)
 }
 
 // Chargeable reports whether an update runs a new search and therefore counts

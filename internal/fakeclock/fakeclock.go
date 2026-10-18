@@ -1,7 +1,7 @@
-// Package fakeclock is a manually advanced clock for mediacache tests.
+// Package fakeclock is a manually advanced clock for tests.
 //
-// It lives outside _test files because both the limiter and the cache tests
-// drive time through it.
+// It lives outside _test files because several packages (mediacache, its
+// limiter, search) drive time through it.
 package fakeclock
 
 import (

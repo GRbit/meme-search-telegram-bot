@@ -61,6 +61,7 @@ func TestDefaults(t *testing.T) {
 	want.Search.ResultsPerPage = 5
 	want.Search.Mode = memesearch.ModeVector
 	want.Search.InlineResults = 3
+	want.Search.InlineDebounce = time.Second
 	want.Media.CacheChatID = 0
 	want.Media.LibraryDir = filepath.Join(exe, "memes")
 	want.Media.WarmupInterval = 6 * time.Hour
@@ -94,6 +95,7 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		"RESULTS_PER_PAGE=10",
 		"SEARCH_MODE=keyword",
 		"INLINE_RESULTS=7",
+		"INLINE_DEBOUNCE=250ms",
 		"SAVE_DIR=/save",
 		"SAVE_DIR_PREFIX=bot-",
 		"SAVE_NOTE=see you",
@@ -129,6 +131,7 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		{"Search.ResultsPerPage", c.Search.ResultsPerPage, 10},
 		{"Search.Mode", c.Search.Mode, memesearch.ModeKeyword},
 		{"Search.InlineResults", c.Search.InlineResults, 7},
+		{"Search.InlineDebounce", c.Search.InlineDebounce, 250 * time.Millisecond},
 		{"Saver.Dir", c.Saver.Dir, "/save"},
 		{"Saver.DirPrefix", c.Saver.DirPrefix, "bot-"},
 		{"Saver.Note", c.Saver.Note, "see you"},
@@ -290,6 +293,8 @@ func TestValidation(t *testing.T) {
 		{"rpp not int", env("RESULTS_PER_PAGE=five"), "RESULTS_PER_PAGE"},
 		{"inline results too many", env("INLINE_RESULTS=21"), "INLINE_RESULTS"},
 		{"inline results negative", env("INLINE_RESULTS=-1"), "INLINE_RESULTS"},
+		{"inline debounce negative", env("INLINE_DEBOUNCE=-1s"), "INLINE_DEBOUNCE"},
+		{"inline debounce bad", env("INLINE_DEBOUNCE=1"), "INLINE_DEBOUNCE"},
 		{"mode", env("SEARCH_MODE=hybrid"), "SEARCH_MODE"},
 		{"per user negative", env("PUBLIC_DAILY_PER_USER=-1"), "PUBLIC_DAILY_PER_USER"},
 		{"total negative", env("PUBLIC_DAILY_TOTAL=-1"), "PUBLIC_DAILY_TOTAL"},

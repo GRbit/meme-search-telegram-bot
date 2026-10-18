@@ -164,6 +164,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `RESULTS_PER_PAGE` | `5` | Memes per page in private chat, 1-10 |
 | `SEARCH_MODE` | `vector` | `vector` (semantic) or `keyword` |
 | `INLINE_RESULTS` | `3` | Memes per inline query, 1-20; uncached ones are queued for upload |
+| `INLINE_DEBOUNCE` | `1s` | Inline queries wait this long and are dropped if the user kept typing; `0` disables |
 | `CACHE_CHAT_ID` | empty | Private cache channel id; empty disables inline mode and warmup |
 | `LIBRARY_DIR` | `SAVE_DIR` | Library root scanned for warmup and file name matching |
 | `WARMUP_INTERVAL` | `6h` | How often the library is rescanned |
@@ -188,7 +189,8 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 
 Every text search and inline search by a public user counts as one search; paging
 with "More" is free, it reuses results the bot already has. Telegram sends an inline query on every keystroke,
-so inline queries count once per `INLINE_CHARGE_WINDOW`. Counters are stored in SQLite and reset at midnight in
+so inline queries count once per `INLINE_CHARGE_WINDOW`; queries dropped by `INLINE_DEBOUNCE` count the same way,
+they do not cost extra. Counters are stored in SQLite and reset at midnight in
 `TZ`. Search API v1 allows 60 requests per minute per token; the limits keep public use well below that.
 
 ## Troubleshooting

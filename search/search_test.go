@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -269,7 +271,7 @@ func TestPagingExpired(t *testing.T) {
 	e := newEnv(t, &fakeAPI{results: memeRange(8)}, &fakeMedia{uploads: true})
 	e.process(textUpdate("x"))
 	data := e.moreData(t)
-	e.clock.Add(time.Hour + time.Second)
+	e.clock.Advance(time.Hour + time.Second)
 	e.process(callbackUpdate(userID, data))
 	ans := e.tg.byMethod("answerCallbackQuery")
 	if len(ans) != 1 || !strings.Contains(ans[0].fields["text"], "expired") {
@@ -630,5 +632,85 @@ func TestInlineResultsDefaultLimit(t *testing.T) {
 	}
 	if !slices.Equal(media.enqueued, []int64{2, 3}) {
 		t.Fatalf("enqueued = %v", media.enqueued)
+	}
+}
+
+func withDebounce(d time.Duration) envOpt {
+	return func(c *Config, _ *Deps) { c.InlineDebounce = d }
+}
+
+func inlineAnswerIDs(e *env) []string {
+	var ids []string
+	for _, c := range e.tg.byMethod("answerInlineQuery") {
+		ids = append(ids, c.fields["inline_query_id"])
+	}
+	return ids
+}
+
+// "c" at 0s, "ca" at 0.5s: when "c"'s debounce ends at 1s it is no longer the
+// user's latest query, so it never reaches the API and is never answered.
+func TestInlineDebounceDropsSuperseded(t *testing.T) {
+	api := &fakeAPI{results: memeRange(1)}
+	e := newEnv(t, api, &fakeMedia{uploads: true, known: map[int64]string{1: "f1"}}, withDebounce(time.Second))
+	var wg sync.WaitGroup
+	e.processAsync(&wg, inlineUpdateFrom(userID, "iq1", "c"))
+	e.waitTimers(t, 1)
+	e.clock.Advance(500 * time.Millisecond)
+	e.processAsync(&wg, inlineUpdateFrom(userID, "iq2", "ca"))
+	e.waitTimers(t, 2)
+	if n := api.searchCount(); n != 0 {
+		t.Fatalf("searched %d times before the debounce ended", n)
+	}
+	e.clock.Advance(500 * time.Millisecond)
+	e.clock.Advance(500 * time.Millisecond)
+	wg.Wait()
+	if !slices.Equal(api.searches, []string{"ca"}) {
+		t.Fatalf("searches = %q", api.searches)
+	}
+	if ids := inlineAnswerIDs(e); !slices.Equal(ids, []string{"iq2"}) {
+		t.Fatalf("answered = %v", ids)
+	}
+}
+
+func TestInlineDebounceOtherUsersIndependent(t *testing.T) {
+	api := &fakeAPI{results: memeRange(1)}
+	e := newEnv(t, api, &fakeMedia{uploads: true, known: map[int64]string{1: "f1"}}, withDebounce(time.Second))
+	var wg sync.WaitGroup
+	e.processAsync(&wg, inlineUpdateFrom(userID, "iq1", "cat"))
+	e.processAsync(&wg, inlineUpdateFrom(userID+1, "iq2", "dog"))
+	e.waitTimers(t, 2)
+	e.clock.Advance(time.Second)
+	wg.Wait()
+	ids := inlineAnswerIDs(e)
+	slices.Sort(ids)
+	if api.searchCount() != 2 || !slices.Equal(ids, []string{"iq1", "iq2"}) {
+		t.Fatalf("searches = %q, answered = %v", api.searches, ids)
+	}
+}
+
+// After a query ran, the next one from the same user is not "superseded" by
+// stale state: the user's entry is cleaned up when the latest query finishes.
+func TestInlineDebounceSequentialQueriesBothRun(t *testing.T) {
+	api := &fakeAPI{results: memeRange(1)}
+	e := newEnv(t, api, &fakeMedia{uploads: true, known: map[int64]string{1: "f1"}}, withDebounce(time.Second))
+	for i, q := range []string{"cat", "dog"} {
+		var wg sync.WaitGroup
+		e.processAsync(&wg, inlineUpdateFrom(userID, "iq"+strconv.Itoa(i), q))
+		e.waitTimers(t, 1)
+		e.clock.Advance(time.Second)
+		wg.Wait()
+	}
+	if !slices.Equal(api.searches, []string{"cat", "dog"}) {
+		t.Fatalf("searches = %q", api.searches)
+	}
+	if n := e.mod.inline.len(); n != 0 {
+		t.Fatalf("debounce entries left = %d", n)
+	}
+}
+
+func TestInlineDebounceNegativeRejected(t *testing.T) {
+	fields, _ := configerr.Fields((Config{InlineDebounce: -time.Second}).Validate())
+	if len(fields) != 1 || fields[0].Name != "InlineDebounce" {
+		t.Fatalf("fields = %v", fields)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/grbit/meme-search-telegram-bot/i18n"
+	"github.com/grbit/meme-search-telegram-bot/internal/fakeclock"
 	"github.com/grbit/meme-search-telegram-bot/mediacache"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 )
@@ -255,24 +256,6 @@ func memeRange(n int) []memesearch.Meme {
 	return memes(ids...)
 }
 
-// fakeClock is a settable Deps.Now.
-type fakeClock struct {
-	mu sync.Mutex
-	t  time.Time
-}
-
-func (c *fakeClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.t
-}
-
-func (c *fakeClock) Add(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.t = c.t.Add(d)
-}
-
 // levelCounter is a slog.Handler counting records at Warn and above.
 type levelCounter struct {
 	mu   sync.Mutex
@@ -305,7 +288,7 @@ type env struct {
 	tg    *fakeTG
 	api   *fakeAPI
 	media *fakeMedia
-	clock *fakeClock
+	clock *fakeclock.Clock
 	mod   *Module
 	b     *bot.Bot
 }
@@ -318,7 +301,7 @@ func newEnv(t *testing.T, api *fakeAPI, media *fakeMedia, opts ...envOpt) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &env{tg: newFakeTG(t), api: api, media: media, clock: &fakeClock{t: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)}}
+	e := &env{tg: newFakeTG(t), api: api, media: media, clock: fakeclock.New(time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC))}
 	cfg := Config{}
 	deps := Deps{
 		API: api, Media: media, I18n: bundle, Now: e.clock.Now,
@@ -331,6 +314,7 @@ func newEnv(t *testing.T, api *fakeAPI, media *fakeMedia, opts ...envOpt) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	e.mod.after = e.clock.After
 	e.b, err = bot.New("123:secret", bot.WithServerURL(e.tg.srv.URL), bot.WithSkipGetMe(), bot.WithNotAsyncHandlers(),
 		bot.WithDefaultHandler(func(context.Context, *bot.Bot, *models.Update) {}))
 	if err != nil {
@@ -364,9 +348,32 @@ func callbackUpdate(from int64, data string) *models.Update {
 }
 
 func inlineUpdate(q string) *models.Update {
+	return inlineUpdateFrom(userID, "iq1", q)
+}
+
+func inlineUpdateFrom(user int64, id, q string) *models.Update {
 	return &models.Update{InlineQuery: &models.InlineQuery{
-		ID: "iq1", Query: q, From: &models.User{ID: userID, LanguageCode: "en"},
+		ID: id, Query: q, From: &models.User{ID: user, LanguageCode: "en"},
 	}}
+}
+
+// processAsync runs an update in its own goroutine, as the real bot does, so a
+// debounced handler can sleep on the fake clock while the test advances it.
+func (e *env) processAsync(wg *sync.WaitGroup, u *models.Update) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		e.process(u)
+	}()
+}
+
+// waitTimers blocks until n handlers sleep on the fake clock; advancing the
+// clock earlier would fire nothing and leave the handlers waiting forever.
+func (e *env) waitTimers(t *testing.T, n int) {
+	t.Helper()
+	if !e.clock.WaitForWaiters(n, 5*time.Second) {
+		t.Fatalf("waiters = %d, want %d", e.clock.Waiters(), n)
+	}
 }
 
 func (e *env) process(u *models.Update) {

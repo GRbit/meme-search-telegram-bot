@@ -193,6 +193,16 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 	q, ok := searchQuery(iq.Query)
 	m.log.DebugContext(ctx, "search: inline", "update", "inline_query", "user_id", user, "query", q,
 		"query_len", utf8.RuneCountInString(q))
+	// Telegram sends a query per keystroke; only the one the user stopped at
+	// is worth an API call. Access already charged it in the middleware, at
+	// arrival, exactly as without the debounce.
+	if m.cfg.InlineDebounce > 0 {
+		seq, latest := m.waitLatest(ctx, user, iq.ID)
+		if !latest {
+			return
+		}
+		defer m.inline.finish(user, seq)
+	}
 	results := []models.InlineQueryResult{}
 	var misses []memesearch.Meme
 	if ok {

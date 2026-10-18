@@ -17,7 +17,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/grbit/meme-search-telegram-bot/configerr"
-	"github.com/grbit/meme-search-telegram-bot/mediacache/internal/fakeclock"
+	"github.com/grbit/meme-search-telegram-bot/internal/fakeclock"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 	"github.com/grbit/meme-search-telegram-bot/store"
 )
