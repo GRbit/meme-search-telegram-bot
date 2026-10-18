@@ -260,6 +260,40 @@ func (q *Queue[T]) Pause(d time.Duration) {
 	q.signal()
 }
 
+// Move puts the queued job with key at priority to, at its head or tail. It
+// reports false when no job with key is queued at another priority or to is
+// full; the job then stays where it was.
+func (q *Queue[T]) Move(key string, to Priority, front bool) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if key == "" || q.closed {
+		return false
+	}
+	if _, queued := q.keys[key]; !queued {
+		return false
+	}
+	for p := range q.items {
+		from := Priority(p)
+		if from == to {
+			continue
+		}
+		for i, e := range q.items[from] {
+			if e.key != key {
+				continue
+			}
+			if len(q.items[to]) >= q.capacity(to) {
+				q.log.Debug("upload queue: move refused, target full", "key", key, "to", to.String())
+				return false
+			}
+			q.items[from] = append(q.items[from][:i], q.items[from][i+1:]...)
+			q.add(to, e, front)
+			q.log.Debug("upload queue: moved", "key", key, "from", from.String(), "to", to.String(), "front", front)
+			return true
+		}
+	}
+	return false
+}
+
 // DropBackground removes every queued background job and returns how many.
 func (q *Queue[T]) DropBackground() int {
 	q.mu.Lock()

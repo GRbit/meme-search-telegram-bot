@@ -87,12 +87,12 @@ const (
 //
 // How a meme reaches Telegram (file_id, upload to the cache channel, library
 // bytes, API bytes) is the cache's decision: albums use Prepare and report
-// uploaded bytes back with Remember, inline uses Lookup and Enqueue, and
+// uploaded bytes back with Remember, inline uses Lookup and EnqueueFor, and
 // UploadsEnabled only decides whether inline mode is registered.
 type MediaCache interface {
 	UploadsEnabled() bool
 	Lookup(ctx context.Context, m memesearch.Meme) (fileID string, ok bool)
-	Enqueue(ms ...memesearch.Meme)
+	EnqueueFor(userID int64, ms ...memesearch.Meme)
 	Prepare(ctx context.Context, m memesearch.Meme) (mediacache.Photo, error)
 	RememberPhoto(ctx context.Context, memeID int64, p mediacache.Photo, fileID, fileUniqueID string) error
 }

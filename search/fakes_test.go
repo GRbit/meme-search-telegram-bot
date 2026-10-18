@@ -198,6 +198,8 @@ type fakeMedia struct {
 	prepared   []int64
 	enqueued   []int64
 	remembered []remembered
+	// enqueuedFor is the user of each EnqueueFor call.
+	enqueuedFor []int64
 }
 
 func (m *fakeMedia) UploadsEnabled() bool { return m.uploads }
@@ -222,9 +224,10 @@ func (m *fakeMedia) Prepare(_ context.Context, meme memesearch.Meme) (mediacache
 	return mediacache.Photo{FileID: fmt.Sprintf("prep-%d", meme.ID), Name: meme.Filename}, nil
 }
 
-func (m *fakeMedia) Enqueue(ms ...memesearch.Meme) {
+func (m *fakeMedia) EnqueueFor(user int64, ms ...memesearch.Meme) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.enqueuedFor = append(m.enqueuedFor, user)
 	for _, x := range ms {
 		m.enqueued = append(m.enqueued, x.ID)
 	}

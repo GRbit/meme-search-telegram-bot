@@ -10,9 +10,10 @@
 // Two paths reach Telegram. A user waiting for a private chat album gets bytes
 // from Prepare and never waits for the channel; the file_ids the album send
 // returns are stored with RememberPhoto. The cache channel serves only what
-// has no chat to be sent to: inline misses (Enqueue, Resolve) at real-time
-// priority and warmup at background priority, through one rate limiter in
-// which real-time jobs always jump ahead of warmup.
+// has no chat to be sent to: inline misses (EnqueueFor, Enqueue, Resolve) at
+// real-time priority and warmup at background priority, through one rate
+// limiter in which real-time jobs always jump ahead of warmup. Uploads only a
+// user's older inline query wanted are demoted to background priority.
 package mediacache
 
 import (
@@ -143,6 +144,8 @@ type Cache struct {
 	calls       map[int64]*call
 	enqueued    int
 	maxEnqueued int
+	// current holds the meme ids of each user's latest EnqueueFor.
+	current map[int64]map[int64]struct{}
 
 	scanMu  sync.Mutex
 	indexOn *bool // nil until the first scan; logs only on change
@@ -203,6 +206,7 @@ func newCache(ctx context.Context, cfg Config, deps Deps, clock limiter.Clock) (
 		life:        life,
 		stopLife:    stop,
 		calls:       map[int64]*call{},
+		current:     map[int64]map[int64]struct{}{},
 		maxEnqueued: defaultMaxEnqueued,
 	}, nil
 }
@@ -328,6 +332,7 @@ func (c *Cache) Resolve(ctx context.Context, m memesearch.Meme) (string, error) 
 		return "", ErrStopped
 	}
 	cl := c.join(m, false)
+	c.pin(cl)
 	select {
 	case <-cl.done:
 		return cl.fileID, cl.err
@@ -342,10 +347,15 @@ func (c *Cache) Resolve(ctx context.Context, m memesearch.Meme) (string, error) 
 // At most a fixed number of enqueued memes are in flight; more are dropped,
 // as the next query enqueues them again.
 func (c *Cache) Enqueue(ms ...memesearch.Meme) {
+	c.enqueue(0, false, ms)
+}
+
+func (c *Cache) enqueue(userID int64, owned bool, ms []memesearch.Meme) {
 	if c.cfg.CacheChatID == 0 || c.life.Err() != nil {
 		c.log.Debug("enqueue ignored", "count", len(ms), "cache_chat", c.cfg.CacheChatID != 0)
 		return
 	}
+	want := map[int64]struct{}{}
 	for _, m := range ms {
 		if err := notPhoto(m); err != nil {
 			c.log.Debug("enqueue skipped", "meme_id", m.ID, "err", err)
@@ -359,7 +369,23 @@ func (c *Cache) Enqueue(ms ...memesearch.Meme) {
 			c.log.Debug("enqueue dropped: too many in flight", "meme_id", m.ID, "max", c.maxEnqueued)
 			continue
 		}
-		c.log.Debug("enqueued", "meme_id", m.ID)
+		if !owned {
+			c.pin(cl)
+		} else {
+			c.mu.Lock()
+			// A call that already finished must not be recorded: its cleanup
+			// has run and would never remove the entry.
+			if c.calls[m.ID] == cl {
+				if cl.owners == nil {
+					cl.owners = map[int64]struct{}{}
+				}
+				cl.owners[userID] = struct{}{}
+				want[m.ID] = struct{}{}
+				c.promote(cl)
+			}
+			c.mu.Unlock()
+		}
+		c.log.Debug("enqueued", "meme_id", m.ID, "user_id", userID)
 		go func() {
 			<-cl.done
 			if cl.err != nil {
@@ -367,6 +393,55 @@ func (c *Cache) Enqueue(ms ...memesearch.Meme) {
 			}
 		}()
 	}
+	if owned {
+		c.replaceCurrent(userID, want)
+	}
+}
+
+// replaceCurrent makes want the user's current query and demotes what only
+// the previous one wanted.
+func (c *Cache) replaceCurrent(userID int64, want map[int64]struct{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	demoted := 0
+	for id := range c.current[userID] {
+		if _, still := want[id]; still {
+			continue
+		}
+		cl := c.calls[id]
+		if cl == nil {
+			continue
+		}
+		delete(cl.owners, userID)
+		if !cl.demoted {
+			c.demote(cl)
+			if cl.demoted {
+				demoted++
+			}
+		}
+	}
+	if len(want) == 0 {
+		delete(c.current, userID)
+	} else {
+		c.current[userID] = want
+	}
+	c.log.Debug("inline query uploads updated", "user_id", userID, "wanted", len(want), "demoted", demoted)
+}
+
+// EnqueueFor is Enqueue for the misses of one user's inline query. The
+// user's earlier query is over: its uploads that no other user's current
+// query, Resolve caller or anonymous Enqueue wants are demoted to background
+// priority (not dropped), so they stop delaying the query the user sees now.
+// A demoted upload wanted again by a current query goes back to real time.
+func (c *Cache) EnqueueFor(userID int64, ms ...memesearch.Meme) {
+	c.enqueue(userID, true, ms)
+}
+
+func (c *Cache) pin(cl *call) {
+	c.mu.Lock()
+	cl.pinned = true
+	c.promote(cl)
+	c.mu.Unlock()
 }
 
 // Remember records the file_id Telegram returned when m was sent elsewhere.

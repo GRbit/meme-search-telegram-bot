@@ -248,3 +248,43 @@ func TestCloseReturnsQueuedAndUnblocks(t *testing.T) {
 		t.Fatalf("Push after Close = %v", err)
 	}
 }
+
+func TestMoveChangesPriority(t *testing.T) {
+	q, _ := newQueue(t, Config{PerMin: 100, BackgroundPerMin: 100})
+	mustPush(t, q, Background, "w")
+	mustPush(t, q, Realtime, "a")
+	mustPush(t, q, Realtime, "b")
+	if !q.Move("a", Background, true) {
+		t.Fatal("Move a -> background = false")
+	}
+	if q.Move("a", Background, true) || q.Move("missing", Background, true) {
+		t.Fatal("Move of a job not queued at another priority = true")
+	}
+	for _, want := range []got{{v: "b", p: Realtime}, {v: "a", p: Background}, {v: "w", p: Background}} {
+		if g := nextNow(t, q); g != want {
+			t.Fatalf("got %+v, want %+v", g, want)
+		}
+	}
+	// Once handed out a job cannot be moved.
+	if q.Move("a", Realtime, false) {
+		t.Fatal("Move of a handed out job = true")
+	}
+}
+
+func TestMoveToTailAndCapacity(t *testing.T) {
+	q, _ := newQueue(t, Config{PerMin: 100, BackgroundPerMin: 100, RealtimeCap: 2})
+	mustPush(t, q, Background, "x")
+	mustPush(t, q, Background, "y")
+	mustPush(t, q, Realtime, "r1")
+	if !q.Move("x", Realtime, false) {
+		t.Fatal("Move x -> realtime = false")
+	}
+	if q.Move("y", Realtime, false) {
+		t.Fatal("Move into a full priority = true")
+	}
+	for _, want := range []string{"r1", "x", "y"} {
+		if g := nextNow(t, q); g.v != want {
+			t.Fatalf("got %q, want %q", g.v, want)
+		}
+	}
+}

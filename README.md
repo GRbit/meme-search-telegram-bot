@@ -62,7 +62,8 @@ folders contain the same file name, the bot downloads that one meme from the API
 SHA-256 matches.
 
 All uploads to the channel share one queue. Inline misses go to the front of the queue, before any warmup
-upload, and warmup is additionally capped at `WARMUP_UPLOADS_PER_MIN`. Telegram throttles bots that
+upload, and warmup is additionally capped at `WARMUP_UPLOADS_PER_MIN`. When you keep typing, uploads for
+your earlier queries drop behind the current one (still ahead of warmup). Telegram throttles bots that
 post to one chat too fast (roughly 20 messages per minute), so the first full warmup of a large library takes
 hours. The bot is fully usable meanwhile; memes not uploaded yet just show up in inline results a query later.
 While some results of an inline query are still uploading, the grid shows a "Memes are loading, try again in a few

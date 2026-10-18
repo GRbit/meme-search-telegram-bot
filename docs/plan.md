@@ -80,6 +80,8 @@ Media cache (`mediacache`, shared by search and saver):
 - Upload limiter: one queue for all cache channel uploads, `CACHE_UPLOADS_PER_MIN` total (default 20). Priority
   `realtime` (inline miss) always goes before `background` (warmup); background is additionally
   capped at `WARMUP_UPLOADS_PER_MIN` (default 10). A Telegram 429 pauses the queue for `retry_after`.
+  When a user's new inline query queues misses, that user's still-queued uploads from earlier queries move to
+  `background` unless another user's current query (or a `Resolve` caller) still wants them.
 - `file_unique_id` and SHA-256 lookups let the saver detect memes already in the collection.
 
 Saving (module `saver`):
@@ -226,3 +228,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
 - Extra setting `MEME_SEARCH_TIMEOUT` (default 30s).
 - Saved file names end in the first 20 hex chars of the SHA-256 (the hash dedup already computes), so the same
   message id with other bytes no longer gets a `_2` suffix. Files saved before this keep their old names.
+- Demoted inline uploads (older queries of the same user) go to the head of `background`, ahead of warmup,
+  and give back their in-flight slot (64): otherwise stale jobs would fill the bound and new misses would be
+  dropped. A current query wanting a demoted meme moves it back to `realtime`. Singleflight per meme and the
+  `WARMUP_UPLOADS_PER_MIN` cap (which demoted jobs obey) are unchanged. A query with no misses demotes nothing.

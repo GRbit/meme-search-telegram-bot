@@ -154,6 +154,9 @@ func (d *Direct) Lookup(context.Context, memesearch.Meme) (string, bool) { retur
 // Enqueue does nothing.
 func (d *Direct) Enqueue(...memesearch.Meme) {}
 
+// EnqueueFor does nothing.
+func (d *Direct) EnqueueFor(int64, ...memesearch.Meme) {}
+
 // Prepare returns the API content of m as Data.
 func (d *Direct) Prepare(ctx context.Context, m memesearch.Meme) (Photo, error) {
 	ct, err := fetchPhoto(ctx, d.api, d.log, m)

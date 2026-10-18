@@ -436,6 +436,10 @@ func TestInlineHitsAndMisses(t *testing.T) {
 	if !slices.Equal(media.enqueued, []int64{2, 4}) {
 		t.Fatalf("enqueued = %v", media.enqueued)
 	}
+	// The user id lets the cache demote this user's older queries' uploads.
+	if !slices.Equal(media.enqueuedFor, []int64{userID}) {
+		t.Fatalf("enqueued for = %v", media.enqueuedFor)
+	}
 	if len(media.prepared) != 0 {
 		t.Fatal("inline blocked on Prepare")
 	}

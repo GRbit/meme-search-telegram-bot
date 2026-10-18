@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,8 +48,12 @@ func (j *job) key() string {
 	if j.done == nil {
 		return "lib:" + j.relPath
 	}
-	return ""
+	return memeKey(j.memeID)
 }
+
+// memeKey names a realtime job in the queue so it can be moved between
+// priorities; singleflight keeps it unique.
+func memeKey(id int64) string { return "meme:" + strconv.FormatInt(id, 10) }
 
 func (j *job) finish(r result) {
 	if j.done != nil {
@@ -57,11 +62,24 @@ func (j *job) finish(r result) {
 }
 
 // call is one in-flight resolve shared by every Resolve and Enqueue of a meme.
+//
+// The fields below err are guarded by Cache.mu.
 type call struct {
-	done     chan struct{}
-	fileID   string
-	err      error
+	done   chan struct{}
+	fileID string
+	err    error
+
+	memeID   int64
 	enqueued bool // counts against maxEnqueued
+	// owners are the users whose latest inline query wants this meme.
+	owners map[int64]struct{}
+	// pinned calls are never demoted: a Resolve caller or an anonymous Enqueue
+	// may be waiting, and neither says when it stops caring.
+	pinned bool
+	// demoted calls run at background priority and gave back their
+	// maxEnqueued slot, so stale jobs cannot starve new queries of slots.
+	demoted      bool
+	slotReleased bool
 }
 
 // join returns the in-flight resolve of m, starting it if needed. With bounded
@@ -76,7 +94,7 @@ func (c *Cache) join(m memesearch.Meme, bounded bool) *call {
 		c.mu.Unlock()
 		return nil
 	}
-	cl := &call{done: make(chan struct{}), enqueued: bounded}
+	cl := &call{done: make(chan struct{}), memeID: m.ID, enqueued: bounded}
 	c.calls[m.ID] = cl
 	if bounded {
 		c.enqueued++
@@ -92,11 +110,57 @@ func (c *Cache) join(m memesearch.Meme, bounded bool) *call {
 		if cl.enqueued {
 			c.enqueued--
 		}
+		for u := range cl.owners {
+			delete(c.current[u], m.ID)
+			if len(c.current[u]) == 0 {
+				delete(c.current, u)
+			}
+		}
 		c.mu.Unlock()
 		cl.fileID, cl.err = fileID, err
 		close(cl.done)
 	}()
 	return cl
+}
+
+// demote moves cl to background priority once no current query, Resolve
+// caller or anonymous Enqueue wants it. Callers hold c.mu.
+func (c *Cache) demote(cl *call) {
+	if cl.pinned || cl.demoted || len(cl.owners) > 0 {
+		return
+	}
+	cl.demoted = true
+	if cl.enqueued {
+		cl.enqueued, cl.slotReleased = false, true
+		c.enqueued--
+	}
+	c.moveDemoted(cl)
+}
+
+// moveDemoted puts a demoted call's job ahead of warmup in the background
+// queue: it was wanted recently, warmup never was. Callers hold c.mu.
+func (c *Cache) moveDemoted(cl *call) {
+	if c.queue.Move(memeKey(cl.memeID), limiter.Background, true) {
+		c.log.Debug("upload demoted to background", "meme_id", cl.memeID)
+		return
+	}
+	// Not queued yet (upload will move it), already running, or the
+	// background queue is full; in every case nothing is lost.
+	c.log.Debug("upload marked demoted, job not movable now", "meme_id", cl.memeID)
+}
+
+// promote undoes demote because a current query wants cl again. Callers hold c.mu.
+func (c *Cache) promote(cl *call) {
+	if !cl.demoted {
+		return
+	}
+	cl.demoted = false
+	if cl.slotReleased {
+		cl.enqueued, cl.slotReleased = true, false
+		c.enqueued++
+	}
+	moved := c.queue.Move(memeKey(cl.memeID), limiter.Realtime, false)
+	c.log.Debug("upload promoted to realtime", "meme_id", cl.memeID, "moved", moved)
 }
 
 // resolveMeme is the slow path of Resolve. It only consults the database;
@@ -160,10 +224,17 @@ func (c *Cache) useRow(ctx context.Context, memeID int64, r libRow) (fileID stri
 	return "", false, nil
 }
 
-// upload queues a realtime job and waits for the worker.
+// upload queues a realtime job and waits for the worker. A call demoted
+// before its job got here goes straight to background priority.
 func (c *Cache) upload(ctx context.Context, j *job) (string, error) {
 	j.done = make(chan result, 1)
-	if _, err := c.queue.Push(limiter.Realtime, "", j); err != nil {
+	c.mu.Lock()
+	_, err := c.queue.Push(limiter.Realtime, j.key(), j)
+	if cl := c.calls[j.memeID]; err == nil && cl != nil && cl.demoted {
+		c.moveDemoted(cl)
+	}
+	c.mu.Unlock()
+	if err != nil {
 		if errors.Is(err, limiter.ErrFull) {
 			return "", ErrQueueFull
 		}

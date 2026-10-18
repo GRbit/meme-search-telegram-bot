@@ -223,7 +223,7 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 		}
 		if len(misses) > 0 {
 			// Never wait: the uploads serve the user's next keystroke, not this one.
-			m.deps.Media.Enqueue(misses...)
+			m.deps.Media.EnqueueFor(user, misses...)
 		}
 		m.log.DebugContext(ctx, "search: inline results", "user_id", user, "count", len(found),
 			"cache_hits", len(results), "cache_misses", len(misses))

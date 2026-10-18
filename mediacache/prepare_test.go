@@ -160,6 +160,7 @@ func TestDirect(t *testing.T) {
 		t.Fatal("Direct must not enable uploads")
 	}
 	d.Enqueue(memesearch.Meme{ID: 1})
+	d.EnqueueFor(7, memesearch.Meme{ID: 1})
 	if _, ok := d.Lookup(ctx, memesearch.Meme{ID: 1}); ok {
 		t.Fatal("Direct Lookup hit")
 	}
