@@ -15,7 +15,7 @@ search:
   results_per_page: 5      # RESULTS_PER_PAGE
   mode: vector             # SEARCH_MODE: vector or keyword
   inline_results: 3        # INLINE_RESULTS, memes per inline query, 1-20
-  inline_debounce: 1s      # INLINE_DEBOUNCE, wait for the user to stop typing; 0 disables
+  inline_debounce: 1s      # INLINE_DEBOUNCE, wait for the user to stop typing, max 5s; 0 disables
 
 cache:
   # chat_id:              # CACHE_CHAT_ID, private channel id like -1001234567890; empty = inline off

@@ -708,9 +708,14 @@ func TestInlineDebounceSequentialQueriesBothRun(t *testing.T) {
 	}
 }
 
-func TestInlineDebounceNegativeRejected(t *testing.T) {
-	fields, _ := configerr.Fields((Config{InlineDebounce: -time.Second}).Validate())
-	if len(fields) != 1 || fields[0].Name != "InlineDebounce" {
-		t.Fatalf("fields = %v", fields)
+func TestInlineDebounceBounds(t *testing.T) {
+	for _, d := range []time.Duration{-time.Second, 5*time.Second + time.Millisecond} {
+		fields, _ := configerr.Fields((Config{InlineDebounce: d}).Validate())
+		if len(fields) != 1 || fields[0].Name != "InlineDebounce" {
+			t.Fatalf("%v: fields = %v", d, fields)
+		}
+	}
+	if err := (Config{InlineDebounce: 5 * time.Second}).Validate(); err != nil {
+		t.Fatalf("5s rejected: %v", err)
 	}
 }

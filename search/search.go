@@ -63,8 +63,8 @@ func (c Config) Validate() error {
 	if c.PageTTL < 0 {
 		errs = append(errs, &configerr.Field{Name: "PageTTL", Reason: "must not be negative"})
 	}
-	if c.InlineDebounce < 0 {
-		errs = append(errs, &configerr.Field{Name: "InlineDebounce", Reason: "must not be negative (0 disables it)"})
+	if c.InlineDebounce < 0 || c.InlineDebounce > maxInlineDebounce {
+		errs = append(errs, &configerr.Field{Name: "InlineDebounce", Reason: fmt.Sprintf("must be 0..%s (0 disables it)", maxInlineDebounce)})
 	}
 	if c.InlineResults < 0 || c.InlineResults > memesearch.MaxLimit {
 		errs = append(errs, &configerr.Field{Name: "InlineResults", Reason: fmt.Sprintf("must be 1..%d (0 means %d)", memesearch.MaxLimit, defaultInlineResults)})
@@ -77,6 +77,9 @@ const (
 	defaultResultsPerPage = 5
 	defaultPageTTL        = time.Hour
 	defaultInlineResults  = 3
+	// maxInlineDebounce leaves room for the search and the answer: Telegram
+	// expires an inline query about 10s after it was sent.
+	maxInlineDebounce = 5 * time.Second
 )
 
 // MediaCache is what the module needs from mediacache.Cache; mediacache.Direct

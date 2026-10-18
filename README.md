@@ -164,7 +164,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `RESULTS_PER_PAGE` | `5` | Memes per page in private chat, 1-10 |
 | `SEARCH_MODE` | `vector` | `vector` (semantic) or `keyword` |
 | `INLINE_RESULTS` | `3` | Memes per inline query, 1-20; uncached ones are queued for upload |
-| `INLINE_DEBOUNCE` | `1s` | Inline queries wait this long and are dropped if the user kept typing; `0` disables |
+| `INLINE_DEBOUNCE` | `1s` | Inline queries wait this long and are dropped if the user kept typing; at most `5s`, `0` disables |
 | `CACHE_CHAT_ID` | empty | Private cache channel id; empty disables inline mode and warmup |
 | `LIBRARY_DIR` | `SAVE_DIR` | Library root scanned for warmup and file name matching |
 | `WARMUP_INTERVAL` | `6h` | How often the library is rescanned |

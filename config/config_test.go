@@ -295,6 +295,7 @@ func TestValidation(t *testing.T) {
 		{"inline results negative", env("INLINE_RESULTS=-1"), "INLINE_RESULTS"},
 		{"inline debounce negative", env("INLINE_DEBOUNCE=-1s"), "INLINE_DEBOUNCE"},
 		{"inline debounce bad", env("INLINE_DEBOUNCE=1"), "INLINE_DEBOUNCE"},
+		{"inline debounce too long", env("INLINE_DEBOUNCE=6s"), "INLINE_DEBOUNCE"},
 		{"mode", env("SEARCH_MODE=hybrid"), "SEARCH_MODE"},
 		{"per user negative", env("PUBLIC_DAILY_PER_USER=-1"), "PUBLIC_DAILY_PER_USER"},
 		{"total negative", env("PUBLIC_DAILY_TOTAL=-1"), "PUBLIC_DAILY_TOTAL"},
