@@ -117,7 +117,7 @@ Access and limits:
 Variables (default): `TELEGRAM_BOT_TOKEN` (required), `MEME_SEARCH_URL` (required), `MEME_SEARCH_API_TOKEN`
 (required, scopes `search:read,media:read`), `CACHE_CHAT_ID` (empty = inline off, no warmup), `LIBRARY_DIR`
 (= `SAVE_DIR`), `WARMUP_INTERVAL` (6h), `CACHE_UPLOADS_PER_MIN` (20), `WARMUP_UPLOADS_PER_MIN` (10),
-`RESULTS_PER_PAGE` (5), `SEARCH_MODE` (vector), `SAVE_DIR` (`memes/` next to binary), `SAVE_DIR_PREFIX` (tg-),
+`RESULTS_PER_PAGE` (5), `SEARCH_MODE` (vector), `INLINE_RESULTS` (3), `SAVE_DIR` (`memes/` next to binary), `SAVE_DIR_PREFIX` (tg-),
 `SAVE_NOTE`, `SAVE_USER_IDS`, `TRUSTED_USER_IDS`, `PUBLIC_DAILY_PER_USER` (5), `PUBLIC_DAILY_TOTAL` (120),
 `INLINE_CHARGE_WINDOW` (10s), `ADMIN_CONTACT`, `DEFAULT_LANG` (en), `TZ` (UTC), `DB_PATH` (`data/bot.db` next to
 binary), `CONFIG_FILE`, `LOG_LEVEL` (info).
@@ -211,6 +211,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
 - Inline limit denials use `cache_time` 1, because go-telegram/bot drops 0 and Telegram would cache the denial 300s.
 - Inline answers with cache misses also use `cache_time` 1 and show a "memes are loading" button, so an empty or
   partial grid explains itself and is not replayed after the uploads finish; all-hit answers keep 30s.
+- Extra setting `INLINE_RESULTS` (default 3, was a fixed 20): each inline query asks for that many memes and
+  queues only their misses, so typing does not flood the upload queue. Valid 1..20, the API's `limit` cap.
 - The saver accepts jpg, png and webp only (the formats meme-search's uploader takes); a second "already saved"
   reply covers duplicates inside the sender's own folder.
 - `srch:s:` is reserved but not charged until phase 4 implements "similar".

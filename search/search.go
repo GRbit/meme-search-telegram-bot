@@ -43,6 +43,9 @@ type Config struct {
 	ResultsPerPage int             // 1..10 (Telegram album limit); 0 means 5
 	Mode           memesearch.Mode // "" means memesearch.ModeVector
 	PageTTL        time.Duration   // how long fetched results stay pageable; 0 means 1h
+	// InlineResults is how many memes one inline query asks for, 1..memesearch.MaxLimit (the API's cap); 0
+	// means 3. Every miss among them is queued for upload, so a small number keeps the queue short.
+	InlineResults int
 }
 
 // Validate reports every invalid field as a *configerr.Field.
@@ -59,6 +62,9 @@ func (c Config) Validate() error {
 	if c.PageTTL < 0 {
 		errs = append(errs, &configerr.Field{Name: "PageTTL", Reason: "must not be negative"})
 	}
+	if c.InlineResults < 0 || c.InlineResults > memesearch.MaxLimit {
+		errs = append(errs, &configerr.Field{Name: "InlineResults", Reason: fmt.Sprintf("must be 1..%d (0 means %d)", memesearch.MaxLimit, defaultInlineResults)})
+	}
 	return errors.Join(errs...)
 }
 
@@ -66,6 +72,7 @@ const (
 	maxAlbum              = 10 // Telegram media group limit
 	defaultResultsPerPage = 5
 	defaultPageTTL        = time.Hour
+	defaultInlineResults  = 3
 )
 
 // MediaCache is what the module needs from mediacache.Cache; mediacache.Direct
@@ -133,6 +140,9 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	if cfg.PageTTL == 0 {
 		cfg.PageTTL = defaultPageTTL
 	}
+	if cfg.InlineResults == 0 {
+		cfg.InlineResults = defaultInlineResults
+	}
 	log := deps.Log
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -165,7 +175,7 @@ func (m *Module) Register(b *bot.Bot) {
 		b.RegisterHandlerMatchFunc(isInline, m.handleInline, mw...)
 	}
 	m.log.Info("search module registered", "inline", inline, "results_per_page", m.cfg.ResultsPerPage,
-		"mode", string(m.cfg.Mode), "page_ttl", m.cfg.PageTTL)
+		"mode", string(m.cfg.Mode), "page_ttl", m.cfg.PageTTL, "inline_results", m.cfg.InlineResults)
 }
 
 // Chargeable reports whether an update runs a new search and therefore counts

@@ -14,6 +14,7 @@ meme_search:
 search:
   results_per_page: 5      # RESULTS_PER_PAGE
   mode: vector             # SEARCH_MODE: vector or keyword
+  inline_results: 3        # INLINE_RESULTS, memes per inline query, 1-20
 
 cache:
   # chat_id:              # CACHE_CHAT_ID, private channel id like -1001234567890; empty = inline off

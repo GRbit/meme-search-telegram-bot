@@ -196,7 +196,7 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 	results := []models.InlineQueryResult{}
 	var misses []memesearch.Meme
 	if ok {
-		found, err := m.deps.API.Search(ctx, q, memesearch.SearchOptions{Mode: m.cfg.Mode, Limit: memesearch.MaxLimit})
+		found, err := m.deps.API.Search(ctx, q, memesearch.SearchOptions{Mode: m.cfg.Mode, Limit: m.cfg.InlineResults})
 		if err != nil {
 			// Inline answers have no room for an explanation; an empty grid it is.
 			m.log.WarnContext(ctx, "search: inline search failed", "user_id", user, "err", err)

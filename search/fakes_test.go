@@ -156,6 +156,10 @@ func (a *fakeAPI) Search(_ context.Context, q string, o memesearch.SearchOptions
 	if a.err != nil {
 		return nil, a.err
 	}
+	// Like the real API, never more than asked for.
+	if o.Limit > 0 && len(a.results) > o.Limit {
+		return a.results[:o.Limit], nil
+	}
 	return a.results, nil
 }
 

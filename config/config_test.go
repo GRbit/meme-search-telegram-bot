@@ -60,6 +60,7 @@ func TestDefaults(t *testing.T) {
 	want.MemeSearch.Timeout = memesearch.DefaultTimeout
 	want.Search.ResultsPerPage = 5
 	want.Search.Mode = memesearch.ModeVector
+	want.Search.InlineResults = 3
 	want.Media.CacheChatID = 0
 	want.Media.LibraryDir = filepath.Join(exe, "memes")
 	want.Media.WarmupInterval = 6 * time.Hour
@@ -92,6 +93,7 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		"WARMUP_UPLOADS_PER_MIN=30",
 		"RESULTS_PER_PAGE=10",
 		"SEARCH_MODE=keyword",
+		"INLINE_RESULTS=7",
 		"SAVE_DIR=/save",
 		"SAVE_DIR_PREFIX=bot-",
 		"SAVE_NOTE=see you",
@@ -126,6 +128,7 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		{"Media.WarmupUploadsPerMin", c.Media.WarmupUploadsPerMin, 30},
 		{"Search.ResultsPerPage", c.Search.ResultsPerPage, 10},
 		{"Search.Mode", c.Search.Mode, memesearch.ModeKeyword},
+		{"Search.InlineResults", c.Search.InlineResults, 7},
 		{"Saver.Dir", c.Saver.Dir, "/save"},
 		{"Saver.DirPrefix", c.Saver.DirPrefix, "bot-"},
 		{"Saver.Note", c.Saver.Note, "see you"},
@@ -285,6 +288,8 @@ func TestValidation(t *testing.T) {
 		{"timeout negative", env("MEME_SEARCH_TIMEOUT=-1s"), "MEME_SEARCH_TIMEOUT"},
 		{"rpp eleven", env("RESULTS_PER_PAGE=11"), "RESULTS_PER_PAGE"},
 		{"rpp not int", env("RESULTS_PER_PAGE=five"), "RESULTS_PER_PAGE"},
+		{"inline results too many", env("INLINE_RESULTS=21"), "INLINE_RESULTS"},
+		{"inline results negative", env("INLINE_RESULTS=-1"), "INLINE_RESULTS"},
 		{"mode", env("SEARCH_MODE=hybrid"), "SEARCH_MODE"},
 		{"per user negative", env("PUBLIC_DAILY_PER_USER=-1"), "PUBLIC_DAILY_PER_USER"},
 		{"total negative", env("PUBLIC_DAILY_TOTAL=-1"), "PUBLIC_DAILY_TOTAL"},

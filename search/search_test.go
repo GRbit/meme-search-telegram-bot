@@ -23,11 +23,11 @@ func TestConfigValidate(t *testing.T) {
 	if err := (Config{}).Validate(); err != nil {
 		t.Fatalf("zero config: %v", err)
 	}
-	ok := Config{ResultsPerPage: 10, Mode: memesearch.ModeKeyword, PageTTL: time.Minute}
+	ok := Config{ResultsPerPage: 10, Mode: memesearch.ModeKeyword, PageTTL: time.Minute, InlineResults: memesearch.MaxLimit}
 	if err := ok.Validate(); err != nil {
 		t.Fatalf("valid config: %v", err)
 	}
-	bad := Config{ResultsPerPage: 11, Mode: "hybrid", PageTTL: -time.Second}
+	bad := Config{ResultsPerPage: 11, Mode: "hybrid", PageTTL: -time.Second, InlineResults: memesearch.MaxLimit + 1}
 	fields, rest := configerr.Fields(bad.Validate())
 	if len(rest) != 0 {
 		t.Fatalf("non-field errors: %v", rest)
@@ -37,11 +37,14 @@ func TestConfigValidate(t *testing.T) {
 		names = append(names, f.Name)
 	}
 	slices.Sort(names)
-	if !slices.Equal(names, []string{"Mode", "PageTTL", "ResultsPerPage"}) {
+	if !slices.Equal(names, []string{"InlineResults", "Mode", "PageTTL", "ResultsPerPage"}) {
 		t.Fatalf("fields = %v", names)
 	}
 	if fields, _ := configerr.Fields((Config{ResultsPerPage: -1}).Validate()); len(fields) != 1 {
 		t.Fatal("negative ResultsPerPage accepted")
+	}
+	if fields, _ := configerr.Fields((Config{InlineResults: -1}).Validate()); len(fields) != 1 {
+		t.Fatal("negative InlineResults accepted")
 	}
 }
 
@@ -408,9 +411,9 @@ func TestAlbumRejectedFallsBackToSingles(t *testing.T) {
 func TestInlineHitsAndMisses(t *testing.T) {
 	api := &fakeAPI{results: memeRange(4)}
 	media := &fakeMedia{uploads: true, known: map[int64]string{1: "f1", 3: "f3"}}
-	e := newEnv(t, api, media)
+	e := newEnv(t, api, media, func(c *Config, _ *Deps) { c.InlineResults = 4 })
 	e.process(inlineUpdate("  cat "))
-	if len(api.searches) != 1 || api.searches[0] != "cat" || api.opts[0].Limit != memesearch.MaxLimit {
+	if len(api.searches) != 1 || api.searches[0] != "cat" || api.opts[0].Limit != 4 {
 		t.Fatalf("searches %q opts %+v", api.searches, api.opts)
 	}
 	ans := e.tg.byMethod("answerInlineQuery")
@@ -605,5 +608,27 @@ func TestStartLoadingPayloadLikePlainStart(t *testing.T) {
 	}
 	if Chargeable(textUpdate("/start loading")) {
 		t.Fatal("/start loading is charged")
+	}
+}
+
+// Fewer inline results means fewer uploads queued per keystroke; the default
+// is small on purpose.
+func TestInlineResultsDefaultLimit(t *testing.T) {
+	api := &fakeAPI{results: memeRange(6)}
+	media := &fakeMedia{uploads: true, known: map[int64]string{1: "f1", 5: "f5"}}
+	e := newEnv(t, api, media)
+	e.process(inlineUpdate("cat"))
+	if len(api.opts) != 1 || api.opts[0].Limit != 3 {
+		t.Fatalf("opts = %+v", api.opts)
+	}
+	var results []map[string]any
+	if err := json.Unmarshal([]byte(e.tg.byMethod("answerInlineQuery")[0].fields["results"]), &results); err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0]["photo_file_id"] != "f1" {
+		t.Fatalf("results = %v", results)
+	}
+	if !slices.Equal(media.enqueued, []int64{2, 3}) {
+		t.Fatalf("enqueued = %v", media.enqueued)
 	}
 }
