@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -239,7 +242,7 @@ func TestSavePhoto(t *testing.T) {
 	if got := e.api.reply(t); got != "Saved." {
 		t.Fatalf("reply = %q", got)
 	}
-	want := filepath.Join(e.dir, "tg-alice", "2026-10-18_alice_77.jpg")
+	want := filepath.Join(e.dir, "tg-alice", "2026-10-18_alice_77_"+hash20("big-photo-bytes")+".jpg")
 	data, err := os.ReadFile(want)
 	if err != nil || string(data) != "big-photo-bytes" {
 		t.Fatalf("file: %v %q", err, data)
@@ -264,7 +267,7 @@ func TestSaveImageDocumentExtensionFromTelegramPath(t *testing.T) {
 	m.Document = &models.Document{FileID: "d", FileUniqueID: "ud", MimeType: "image/png", FileName: "../evil.exe"}
 	e.send(m)
 	e.api.reply(t)
-	if _, err := os.Stat(filepath.Join(e.dir, "tg-alice", "2026-10-18_alice_5.png")); err != nil {
+	if _, err := os.Stat(filepath.Join(e.dir, "tg-alice", "2026-10-18_alice_5_"+hash20("png-bytes")+".png")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -277,7 +280,7 @@ func TestSenderWithoutUsernameAndForwardOrigin(t *testing.T) {
 	m.ForwardOrigin = &models.MessageOrigin{MessageOriginChannel: &models.MessageOriginChannel{Chat: models.Chat{Title: "Funny Memes"}}}
 	e.send(m)
 	e.api.reply(t)
-	if _, err := os.Stat(filepath.Join(e.dir, "tg-id1", "2026-10-18_Funny_Memes_9.jpg")); err != nil {
+	if _, err := os.Stat(filepath.Join(e.dir, "tg-id1", "2026-10-18_Funny_Memes_9_"+hash20("x")+".jpg")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -290,7 +293,7 @@ func TestDateUsesConfigLocation(t *testing.T) {
 	m.Date = int(time.Date(2026, 10, 18, 22, 0, 0, 0, time.UTC).Unix()) // 01:00 next day in +3
 	e.send(m)
 	e.api.reply(t)
-	if _, err := os.Stat(filepath.Join(e.dir, "tg-alice", "2026-10-19_alice_1.jpg")); err != nil {
+	if _, err := os.Stat(filepath.Join(e.dir, "tg-alice", "2026-10-19_alice_1_"+hash20("x")+".jpg")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -351,18 +354,41 @@ func TestFolderDuplicateSeesPreexistingFiles(t *testing.T) {
 	}
 }
 
-func TestNameCollisionGetsSuffix(t *testing.T) {
+func TestSameMessageIDDifferentBytesGetsDistinctNames(t *testing.T) {
 	e := newEnv(t, nil)
 	e.api.files["a"] = []byte("one")
 	e.api.files["b"] = []byte("two")
 	e.send(photoMsg(1, "a"))
 	e.api.reply(t)
-	e.send(photoMsg(1, "b")) // same message id, different bytes
+	e.send(photoMsg(1, "b"))
 	e.api.reply(t)
 	names := e.ls(t, "tg-alice")
-	if len(names) != 2 || names[1] != "2026-10-18_alice_1_2.jpg" {
-		t.Errorf("files = %v", names)
+	want := []string{"2026-10-18_alice_1_" + hash20("one") + ".jpg", "2026-10-18_alice_1_" + hash20("two") + ".jpg"}
+	sort.Strings(want)
+	if !slices.Equal(names, want) {
+		t.Errorf("files = %v, want %v", names, want)
 	}
+}
+
+func TestNameCollisionGetsSuffix(t *testing.T) {
+	sum := sha256.Sum256([]byte("one"))
+	base := fileBase(time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC), "alice", 1, sum)
+	dir := filepath.Join(t.TempDir(), "tg-alice")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, base+".jpg"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := writeAtomic(dir, base, "jpg", []byte("one"))
+	if err != nil || filepath.Base(got) != base+"_2.jpg" {
+		t.Errorf("writeAtomic = %q, %v", got, err)
+	}
+}
+
+func hash20(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])[:20]
 }
 
 func TestNoteAppended(t *testing.T) {

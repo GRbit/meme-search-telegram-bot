@@ -91,8 +91,8 @@ func writeAtomic(dir, base, ext string, data []byte) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	// Names collide only if the same message is saved twice with different
-	// bytes; message ids are unique per chat, so this is a safety net.
+	// Names carry a hash prefix, so they collide only with a pre-existing file
+	// of that exact name; this loop is a safety net.
 	target := filepath.Join(dir, base+"."+ext)
 	for i := 2; ; i++ {
 		if _, err := os.Lstat(target); os.IsNotExist(err) {

@@ -35,7 +35,7 @@ flowchart TD
 
     SV --> K{already in the collection? file_unique_id or SHA-256}
     K -->|yes| R1[reply: already in the collection]
-    K -->|no| F[write SAVE_DIR/tg-username/date_source_msgid.jpg]
+    K -->|no| F[write SAVE_DIR/tg-username/date_source_msgid_hash.jpg]
     F --> R2[reply: Saved + SAVE_NOTE]
     F -.queued.-> W
 
@@ -107,7 +107,8 @@ the **same host folder** that meme-search mounts as `/rails/public/memes` (and t
 `/app/public/memes`). In the stock meme-search compose file that is `./meme_search/memes/`.
 
 The bot saves each user's memes into a flat subfolder `<SAVE_DIR_PREFIX><username>`, e.g. `tg-alice/`, named
-`2026-10-18_<source>_<message id>.jpg`, where the source is the channel or person the meme was forwarded from.
+`2026-10-18_<source>_<message id>_<hash>.jpg`, where the source is the channel or person the meme was forwarded
+from and the hash is the first 20 hex chars of the file's SHA-256.
 meme-search does not pick up new folders by itself, and it serves images only from flat folders: after a user
 saved the first meme, register the folder in meme-search **Settings -> Image paths** by its bare name
 (`tg-alice`). New files in a registered folder are indexed on the next rescan and become searchable once their

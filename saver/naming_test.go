@@ -1,6 +1,8 @@
 package saver
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -59,8 +61,10 @@ func TestSourceName(t *testing.T) {
 
 func TestFileBase(t *testing.T) {
 	d := time.Date(2026, 10, 18, 23, 30, 0, 0, time.UTC)
-	if got := fileBase(d, "bob", 77); got != "2026-10-18_bob_77" {
-		t.Fatalf("got %q", got)
+	sum := sha256.Sum256([]byte("meme"))
+	want := "2026-10-18_bob_77_" + hex.EncodeToString(sum[:])[:20]
+	if got := fileBase(d, "bob", 77, sum); got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 

@@ -85,8 +85,8 @@ Saving (module `saver`):
 5. **Photo or image document -> file** under `SAVE_DIR/<prefix><sender>/`, `<sender>` = Telegram username of the
    person talking to the bot (fallback `id<user id>`), `prefix` from `SAVE_DIR_PREFIX` (default `tg-`). Flat folders
    only; README says each folder is registered in meme-search Settings -> Image paths by its bare name. File name
-   `YYYY-MM-DD_<source>_<message id>.<ext>`; `<source>` from `forward_origin` (user username or display name,
-   channel username or title), non-forwarded -> sender's username. Sanitising: keep `\p{L}\p{N}`, everything else
+   `YYYY-MM-DD_<source>_<message id>_<sha256 first 20 hex>.<ext>`; `<source>` from `forward_origin` (user username
+   or display name, channel username or title), non-forwarded -> sender's username. Sanitising: keep `\p{L}\p{N}`, everything else
    -> `_`, collapse runs, trim. `photo`: largest size; `document`: image MIME only; ignore stickers, GIFs, video.
    An album (`media_group_id`) gets one confirmation. Reply "Saved" plus optional `SAVE_NOTE`. Enabled when
    `SAVE_USER_IDS` is non-empty; `SAVE_DIR` default `memes/` next to the executable, created if missing.
@@ -213,3 +213,5 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
 - The Dockerfile declares only `VOLUME /data`: declaring `/memes` would silently create an anonymous volume when a
   user forgets the bind mount, and saves would vanish with the container.
 - Extra setting `MEME_SEARCH_TIMEOUT` (default 30s).
+- Saved file names end in the first 20 hex chars of the SHA-256 (the hash dedup already computes), so the same
+  message id with other bytes no longer gets a `_2` suffix. Files saved before this keep their old names.

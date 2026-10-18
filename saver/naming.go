@@ -1,6 +1,7 @@
 package saver
 
 import (
+	"encoding/hex"
 	"fmt"
 	"path"
 	"strconv"
@@ -74,8 +75,12 @@ func sourceName(msg *models.Message) string {
 	return senderName(msg.From)
 }
 
-func fileBase(date time.Time, source string, msgID int) string {
-	return fmt.Sprintf("%s_%s_%d", date.Format("2006-01-02"), source, msgID)
+// hashPrefixLen is in hex chars: 80 bits keep names unique per folder in
+// practice while staying short enough to read.
+const hashPrefixLen = 20
+
+func fileBase(date time.Time, source string, msgID int, sum [32]byte) string {
+	return fmt.Sprintf("%s_%s_%d_%s", date.Format("2006-01-02"), source, msgID, hex.EncodeToString(sum[:])[:hashPrefixLen])
 }
 
 var mimeExt = map[string]string{

@@ -154,7 +154,7 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 		date = time.Unix(int64(msg.Date), 0)
 	}
 	folder := filepath.Join(m.cfg.Dir, m.cfg.DirPrefix+senderName(msg.From))
-	base := fileBase(date.In(m.cfg.Location), sourceName(msg), msg.ID)
+	base := fileBase(date.In(m.cfg.Location), sourceName(msg), msg.ID, sum)
 	ext := pickExt(filePath, ref.MIME)
 
 	m.mu.Lock()
