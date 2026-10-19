@@ -214,7 +214,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `DEFAULT_LANG` | `en` | Fallback language: users get their Telegram language if the bot has it (`en`, `ru`), otherwise this one |
 | `TZ` | `UTC` | Time zone of the daily limit reset and of dates in file names |
 | `DB_PATH` | `data/bot.db` next to the binary, `/data/bot.db` in Docker | SQLite database |
-| `CONFIG_FILE` | `config.yml` next to the binary, `/config/config.yml` in Docker | Optional YAML config |
+| `CONFIG_FILE` | `config.yml` next to the binary, `/config/config.yml` in Docker | Optional YAML config (an alternative to environment variables; they override it) |
 | `LOG_LEVEL` | `info` | `debug` logs every API call and user interaction (no tokens) |
 
 ### Limits
