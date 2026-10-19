@@ -126,16 +126,20 @@ func (c *Cache) scan(ctx context.Context) (scanStats, error) {
 		if existed && old.size == info.Size() && old.mtimeNS == info.ModTime().UnixNano() {
 			return nil
 		}
-		if err := c.indexFile(ctx, p, rel, info); err != nil {
+		hasFileID, err := c.indexFile(ctx, p, rel, info)
+		if err != nil {
 			c.log.WarnContext(ctx, "library scan: index file", "rel_path", rel, "err", err)
 			return nil
 		}
 		if existed {
 			st.changed++
-			c.log.DebugContext(ctx, "library scan: changed file", "rel_path", rel, "size", info.Size())
+			c.log.DebugContext(ctx, "library scan: changed file", "rel_path", rel, "size", info.Size(),
+				"has_file_id", hasFileID)
 		} else {
 			st.added++
-			c.log.DebugContext(ctx, "library scan: new file", "rel_path", rel, "size", info.Size())
+			// has_file_id on a new file means it was inherited: a copy or a move.
+			c.log.DebugContext(ctx, "library scan: new file", "rel_path", rel, "size", info.Size(),
+				"has_file_id", hasFileID)
 		}
 		return nil
 	})
@@ -164,10 +168,12 @@ func (c *Cache) scan(ctx context.Context) (scanStats, error) {
 	return st, nil
 }
 
-func (c *Cache) indexFile(ctx context.Context, abs, rel string, info fs.FileInfo) error {
+// indexFile hashes and stores one file; hasFileID says whether the row has a
+// file_id (kept, or inherited from a row with the same content).
+func (c *Cache) indexFile(ctx context.Context, abs, rel string, info fs.FileInfo) (hasFileID bool, err error) {
 	sum, err := hashFile(abs)
 	if err != nil {
-		return err
+		return false, err
 	}
 	return c.upsertLibrary(ctx, libRow{
 		relPath:  rel,
@@ -282,11 +288,16 @@ func (c *Cache) AddLibraryFile(ctx context.Context, p string) error {
 	if err != nil {
 		return fmt.Errorf("mediacache: add %s: %w", rel, err)
 	}
-	if err := c.indexFile(ctx, abs, rel, info); err != nil {
+	hasFileID, err := c.indexFile(ctx, abs, rel, info)
+	if err != nil {
 		return fmt.Errorf("mediacache: add %s: %w", rel, err)
 	}
 	c.log.DebugContext(ctx, "add library file: indexed", "rel_path", rel, "size", info.Size())
 	if c.cfg.CacheChatID == 0 {
+		return nil
+	}
+	if hasFileID {
+		c.log.DebugContext(ctx, "add library file: same content already uploaded, file_id inherited", "rel_path", rel)
 		return nil
 	}
 	if _, err := c.pushWarmup(rel); err != nil {

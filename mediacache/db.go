@@ -120,27 +120,43 @@ func (c *Cache) libraryMeta(ctx context.Context) (map[string]fileMeta, error) {
 // upsertLibrary stores a new or changed file. A changed file keeps its
 // file_id and failure only if its content hash is unchanged: a touched file is
 // the same upload, an edited one must be uploaded (or rejected) anew.
-func (c *Cache) upsertLibrary(ctx context.Context, r libRow) error {
-	return store.WriteTx(ctx, c.db, func(tx *sql.Tx) error {
+//
+// A row without a file_id of its own takes one from any row with the same
+// content: file_ids depend on content, not path, so a renamed or moved folder
+// (whose old rows are deleted only after the scan's walk) costs a rehash, not
+// a re-upload. Failures are not inherited: one more attempt is cheap.
+//
+// hasFileID reports whether the stored row has a file_id afterwards.
+func (c *Cache) upsertLibrary(ctx context.Context, r libRow) (hasFileID bool, err error) {
+	err = store.WriteTx(ctx, c.db, func(tx *sql.Tx) error {
 		// In an SQLite UPDATE every SET expression sees the old row, so sha256
-		// on the right is the previous hash.
-		_, err := tx.ExecContext(ctx, `INSERT INTO mediacache_library (rel_path, base_name, sha256, size, mtime_ns)
-			VALUES (?, ?, ?, ?, ?)
+		// on the right is the previous hash. Both subqueries pick the same
+		// row, so file_id and file_unique_id stay a pair.
+		err := tx.QueryRowContext(ctx, `INSERT INTO mediacache_library
+				(rel_path, base_name, sha256, size, mtime_ns, file_id, file_unique_id)
+			VALUES (?1, ?2, ?3, ?4, ?5,
+				COALESCE((SELECT file_id FROM mediacache_library
+					WHERE sha256 = ?3 AND file_id != '' ORDER BY rel_path LIMIT 1), ''),
+				COALESCE((SELECT file_unique_id FROM mediacache_library
+					WHERE sha256 = ?3 AND file_id != '' ORDER BY rel_path LIMIT 1), ''))
 			ON CONFLICT (rel_path) DO UPDATE SET
 				base_name = excluded.base_name,
 				sha256 = excluded.sha256,
 				size = excluded.size,
 				mtime_ns = excluded.mtime_ns,
-				file_id = CASE WHEN sha256 = excluded.sha256 THEN file_id ELSE '' END,
-				file_unique_id = CASE WHEN sha256 = excluded.sha256 THEN file_unique_id ELSE '' END,
-				failed_at = CASE WHEN sha256 = excluded.sha256 THEN failed_at ELSE NULL END,
-				fail_reason = CASE WHEN sha256 = excluded.sha256 THEN fail_reason ELSE '' END`,
-			r.relPath, r.baseName, r.sha256[:], r.size, r.mtimeNS)
+				file_id = CASE WHEN sha256 = excluded.sha256 AND file_id != '' THEN file_id ELSE excluded.file_id END,
+				file_unique_id = CASE WHEN sha256 = excluded.sha256 AND file_id != ''
+					THEN file_unique_id ELSE excluded.file_unique_id END,
+				failed_at = CASE WHEN sha256 = excluded.sha256 AND excluded.file_id = '' THEN failed_at ELSE NULL END,
+				fail_reason = CASE WHEN sha256 = excluded.sha256 AND excluded.file_id = '' THEN fail_reason ELSE '' END
+			RETURNING file_id != ''`,
+			r.relPath, r.baseName, r.sha256[:], r.size, r.mtimeNS).Scan(&hasFileID)
 		if err != nil {
 			return fmt.Errorf("mediacache: upsert library row %s: %w", r.relPath, err)
 		}
 		return nil
 	})
+	return hasFileID, err
 }
 
 func (c *Cache) deleteLibrary(ctx context.Context, rels []string) error {

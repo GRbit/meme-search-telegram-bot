@@ -245,3 +245,9 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   writes every allowed user's memes into `SAVE_DIR/<SAVE_FOLDER>`, so meme-search needs one registered folder and
   the folder duplicate check covers all users; `SAVE_DIR_PREFIX` is ignored there. `SAVE_FOLDER` is validated
   (letters, digits, `-`, `_`), not sanitized: the owner registers exactly that name in meme-search.
+- A library row without its own `file_id` inherits `file_id` and `file_unique_id` from any row with the same
+  SHA-256 (indexed since the first migration), on scan and on `AddLibraryFile`: Telegram's file_id follows content,
+  so a renamed or moved folder costs a rehash, not days of re-uploads. It works within one scan because old rows
+  are deleted after the walk. Failures are not inherited (one more attempt is cheap). Not covered: old rows
+  deleted by an earlier scan (e.g. files moved out and back later): `mediacache_memes` stores no hash, so its
+  file_ids cannot be matched to content safely; those files are uploaded again.
