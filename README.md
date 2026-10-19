@@ -13,35 +13,64 @@ The bot talks to meme-search only through its read-only
 [Search API v1](https://github.com/meme-search/meme-search/blob/main/docs/search-api.md). Saving works by writing
 files into a folder meme-search indexes, so for saving the bot must run on the same machine as meme-search.
 
+## Contents
+
+- [How it works](#how-it-works)
+  - [Why a cache channel](#why-a-cache-channel)
+- [Setup](#setup)
+  - [1. Create the bot](#1-create-the-bot)
+  - [2. Create a meme-search API token](#2-create-a-meme-search-api-token)
+  - [3. Create the cache channel (for inline mode)](#3-create-the-cache-channel-for-inline-mode)
+  - [4. Find user ids](#4-find-user-ids)
+  - [5. Prepare the library folder](#5-prepare-the-library-folder)
+  - [6. Run it](#6-run-it)
+- [Configuration](#configuration)
+  - [Limits](#limits)
+- [Troubleshooting](#troubleshooting)
+- [Embedding the modules in another bot](#embedding-the-modules-in-another-bot)
+- [Development](#development)
+- [License](#license)
+
 ## How it works
 
 ```mermaid
-flowchart TD
-    U[Telegram user] -->|text in private chat| S[search module]
-    U -->|"@bot query" in any chat| I[inline query]
-    U -->|photo or image file| SV[saver module]
+flowchart LR
+    subgraph TG[Telegram]
+        U([Users])
+        PC[Private chat with the bot]
+        IN[Inline mode: @bot query in any chat]
+        CH[(Private cache channel)]
+    end
+    subgraph SRV[Your server]
+        BOT[meme-search-telegram-bot<br/>SQLite: limits, file_id cache]
+        MS[meme-search<br/>Search API v1]
+        LIB[(Library folder)]
+    end
 
-    S --> A{access: tier and daily limit}
-    I --> A
-    A -->|over limit| D[localized limit message with admin contact]
-    A -->|allowed| API[(meme-search Search API v1)]
-    API -->|up to 20 memes| C{media cache: file_id known?}
+    U --> PC
+    U -.-> IN
+    PC -->|text query, picture to save| BOT
+    BOT -->|album of memes, replies| PC
+    IN -.->|query| BOT
+    BOT -.->|grid of cached memes| IN
+    BOT -->|search, meme files| MS
+    MS --- LIB
+    BOT -->|saved memes| LIB
+    LIB -.->|warmup reads files| BOT
+    BOT -.->|uploads each meme once, gets file_id| CH
 
-    C -->|yes| SEND[send album / inline grid by file_id]
-    C -->|no, private chat| UP[bytes from library folder or API, sent in the album; file_id remembered]
-    UP --> SEND
-    C -->|no, inline| Q[queue a real-time upload; shown on the next query]
-    Q -->|real-time priority, always before warmup| CH
-
-    SV --> K{already in the collection? file_unique_id or SHA-256}
-    K -->|yes| R1[reply: already in the collection]
-    K -->|no| F[write SAVE_DIR/tg-username/date_source_msgid_hash.jpg]
-    F --> R2[reply: Saved + SAVE_NOTE]
-    F -.queued.-> W
-
-    L[(library folder)] -->|rescan every WARMUP_INTERVAL| W[warmup: upload files without file_id]
-    W -->|background priority| CH[(private cache channel)]
+    classDef optional fill:#fff4d6,stroke:#d4a017,stroke-dasharray:5 5,color:#000
+    class IN,CH optional
 ```
+
+Dashed yellow parts are optional: inline mode and warmup need the private cache channel (`CACHE_CHAT_ID`).
+
+- **Search in a private chat.** The user sends text, the bot checks the user's daily limit, asks meme-search
+  for up to 20 memes and sends the first page as an album with a "More" button.
+- **Inline search.** The user types `@yourbot cat` in any chat; the bot answers with memes Telegram already
+  has (see below) and queues the rest for upload to the cache channel.
+- **Saving.** An allowed user sends a picture; the bot writes it into the library folder, and meme-search
+  indexes it from there. That is why saving needs the bot on the same machine as meme-search.
 
 ### Why a cache channel
 
@@ -182,7 +211,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `PUBLIC_DAILY_TOTAL` | `120` | Searches per day for all public users together; `0` disables public search |
 | `INLINE_CHARGE_WINDOW` | `10s` | Inline queries of one user within this window count as one search |
 | `ADMIN_CONTACT` | empty | Shown in the limit message, e.g. `@your_username` |
-| `DEFAULT_LANG` | `en` | Language for users whose Telegram language has no translation |
+| `DEFAULT_LANG` | `en` | Fallback language: users get their Telegram language if the bot has it (`en`, `ru`), otherwise this one |
 | `TZ` | `UTC` | Time zone of the daily limit reset and of dates in file names |
 | `DB_PATH` | `data/bot.db` next to the binary, `/data/bot.db` in Docker | SQLite database |
 | `CONFIG_FILE` | `config.yml` next to the binary, `/config/config.yml` in Docker | Optional YAML config |
