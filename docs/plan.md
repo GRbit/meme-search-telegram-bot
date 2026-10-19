@@ -77,6 +77,7 @@ Media cache (`mediacache`, shared by search and saver):
   also on its library row. The channel serves only inline misses and warmup.
 - Warmup: when `CACHE_CHAT_ID` is set and `LIBRARY_DIR` exists, a background worker uploads every library file that
   has no `file_id` to the cache channel. Files the saver writes are queued right away.
+  Order: newest first by the first valid `YYYY-MM-DD` in the base name, ties by `rel_path`, undated files last.
 - Upload limiter: one queue for all cache channel uploads, `CACHE_UPLOADS_PER_MIN` total (default 20). Priority
   `realtime` (inline miss) always goes before `background` (warmup); background is additionally
   capped at `WARMUP_UPLOADS_PER_MIN` (default 10). A Telegram 429 pauses the queue for `retry_after`.
@@ -232,3 +233,9 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   and give back their in-flight slot (64): otherwise stale jobs would fill the bound and new misses would be
   dropped. A current query wanting a demoted meme moves it back to `realtime`. Singleflight per meme and the
   `WARMUP_UPLOADS_PER_MIN` cap (which demoted jobs obey) are unchanged. A query with no misses demotes nothing.
+- Warmup order by file name date is parsed in Go, not stored in a column: the upload queue itself must be kept
+  sorted (otherwise files found by a later scan or saved meanwhile land behind the older backlog), so every
+  queued job needs the date in memory anyway, and a column would need a backfill pass for unchanged rows that a
+  scan never rewrites. Parsing and sorting 50k pending names takes about 50ms per scan. A full background queue
+  evicts its oldest warmup job for a newer file (the evicted one stays pending and is queued again later); jobs
+  someone waits for (realtime, demoted inline) rank before all warmup and are never evicted.

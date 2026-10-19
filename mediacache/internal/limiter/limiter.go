@@ -12,6 +12,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
+	"sort"
 	"sync"
 	"time"
 )
@@ -76,6 +78,7 @@ type Queue[T any] struct {
 	bgStarts    []time.Time
 	pausedUntil time.Time
 	closed      bool
+	less        func(a, b T) bool // nil: FIFO
 
 	wake chan struct{}
 	done chan struct{}
@@ -93,6 +96,20 @@ func New[T any](cfg Config, clock Clock, log *slog.Logger) *Queue[T] {
 	}
 }
 
+// SetOrder keeps each priority sorted by less instead of plain FIFO; call it
+// before the first Push. Jobs that are equal under less stay FIFO, and "front"
+// (PushFront, Move) means first among equals, so a retried or moved job keeps
+// its rank.
+//
+// A full ordered priority evicts its last job to make room for one that ranks
+// before it. less must therefore rank first every job that must not be
+// dropped silently (one with a waiter); the caller re-queues evicted ones.
+func (q *Queue[T]) SetOrder(less func(a, b T) bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.less = less
+}
+
 // Push appends v to its priority. An empty key disables deduplication;
 // otherwise a key already queued is not added again and Push returns false.
 func (q *Queue[T]) Push(p Priority, key string, v T) (bool, error) {
@@ -107,7 +124,7 @@ func (q *Queue[T]) Push(p Priority, key string, v T) (bool, error) {
 			return false, nil
 		}
 	}
-	if len(q.items[p]) >= q.capacity(p) {
+	if len(q.items[p]) >= q.capacity(p) && !q.evictFor(p, v) {
 		q.log.Debug("upload queue: full", "key", key, "priority", p.String(), "len", len(q.items[p]))
 		return false, ErrFull
 	}
@@ -116,8 +133,9 @@ func (q *Queue[T]) Push(p Priority, key string, v T) (bool, error) {
 	return true, nil
 }
 
-// PushFront puts v at the head of its priority, ignoring capacity: it is for
-// retrying a job that was already handed out, which must not be lost.
+// PushFront puts v at the head of its priority (first among equals when
+// ordered), ignoring capacity: it is for retrying a job that was already
+// handed out, which must not be lost.
 func (q *Queue[T]) PushFront(p Priority, key string, v T) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -129,15 +147,40 @@ func (q *Queue[T]) PushFront(p Priority, key string, v T) error {
 	return nil
 }
 
+// evictFor drops the last job of a full ordered priority if v ranks before
+// it, and reports whether there is room now.
+func (q *Queue[T]) evictFor(p Priority, v T) bool {
+	items := q.items[p]
+	if q.less == nil || len(items) == 0 || !q.less(v, items[len(items)-1].v) {
+		return false
+	}
+	last := items[len(items)-1]
+	q.items[p] = items[:len(items)-1]
+	if last.key != "" {
+		delete(q.keys, last.key)
+	}
+	q.log.Debug("upload queue: full, evicted last job for a better ranked one", "evicted", last.key,
+		"priority", p.String())
+	return true
+}
+
 func (q *Queue[T]) add(p Priority, e entry[T], front bool) {
 	if e.key != "" {
 		q.keys[e.key] = struct{}{}
 	}
-	if front {
-		q.items[p] = append([]entry[T]{e}, q.items[p]...)
-	} else {
-		q.items[p] = append(q.items[p], e)
+	items := q.items[p]
+	i := len(items)
+	switch {
+	case q.less != nil && front:
+		// Lower bound: before every job not ranked before e.
+		i = sort.Search(len(items), func(k int) bool { return !q.less(items[k].v, e.v) })
+	case q.less != nil:
+		// Upper bound: after every job not ranked after e, so equals stay FIFO.
+		i = sort.Search(len(items), func(k int) bool { return q.less(e.v, items[k].v) })
+	case front:
+		i = 0
 	}
+	q.items[p] = slices.Insert(items, i, e)
 	q.signal()
 }
 
@@ -260,7 +303,8 @@ func (q *Queue[T]) Pause(d time.Duration) {
 	q.signal()
 }
 
-// Move puts the queued job with key at priority to, at its head or tail. It
+// Move puts the queued job with key at priority to, at its head or tail
+// (first or last among equals when ordered). It
 // reports false when no job with key is queued at another priority or to is
 // full; the job then stays where it was.
 func (q *Queue[T]) Move(key string, to Priority, front bool) bool {

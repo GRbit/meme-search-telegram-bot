@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -286,5 +287,83 @@ func TestMoveToTailAndCapacity(t *testing.T) {
 		if g := nextNow(t, q); g.v != want {
 			t.Fatalf("got %q, want %q", g.v, want)
 		}
+	}
+}
+
+// byNumber orders "a<n>" jobs by n and puts every other job first, equal to
+// each other: the shape the media cache uses (uploads someone wants, then
+// warmup by date).
+func byNumber(a, b string) bool {
+	an, bn := len(a) > 0 && a[0] == 'a', len(b) > 0 && b[0] == 'a'
+	switch {
+	case an != bn:
+		return !an
+	case !an:
+		return false
+	}
+	return a < b
+}
+
+func drainAll(t *testing.T, q *Queue[string]) []string {
+	t.Helper()
+	var out []string
+	for q.Len(Realtime)+q.Len(Background) > 0 {
+		out = append(out, nextNow(t, q).v)
+	}
+	return out
+}
+
+func TestOrderedPushSortsAndKeepsFIFOAmongEquals(t *testing.T) {
+	q, _ := newQueue(t, Config{PerMin: 100, BackgroundPerMin: 100})
+	q.SetOrder(byNumber)
+	for _, v := range []string{"a5", "x1", "a2", "x2", "a9"} {
+		mustPush(t, q, Background, v)
+	}
+	if got, want := drainAll(t, q), []string{"x1", "x2", "a2", "a5", "a9"}; !slices.Equal(got, want) {
+		t.Fatalf("order = %q, want %q", got, want)
+	}
+}
+
+// Front means first among equals: a moved or retried job keeps its rank.
+func TestOrderedFrontIsFirstAmongEquals(t *testing.T) {
+	q, _ := newQueue(t, Config{PerMin: 100, BackgroundPerMin: 100})
+	q.SetOrder(byNumber)
+	mustPush(t, q, Background, "x1")
+	mustPush(t, q, Background, "a5")
+	mustPush(t, q, Realtime, "x2")
+	if !q.Move("x2", Background, true) {
+		t.Fatal("Move = false")
+	}
+	if err := q.PushFront(Background, "a3", "a3"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := drainAll(t, q), []string{"x2", "x1", "a3", "a5"}; !slices.Equal(got, want) {
+		t.Fatalf("order = %q, want %q", got, want)
+	}
+}
+
+// A full ordered priority makes room for a job that ranks before its last
+// one, so a later scan still gets newer files ahead of older queued ones.
+func TestOrderedFullEvictsLastWhenNewRanksBefore(t *testing.T) {
+	q, _ := newQueue(t, Config{PerMin: 100, BackgroundPerMin: 100, BackgroundCap: 2})
+	q.SetOrder(byNumber)
+	mustPush(t, q, Background, "a5")
+	mustPush(t, q, Background, "a7")
+	if _, err := q.Push(Background, "a8", "a8"); !errors.Is(err, ErrFull) {
+		t.Fatalf("Push of a later job = %v, want ErrFull", err)
+	}
+	mustPush(t, q, Background, "a1")
+	if got, want := drainAll(t, q), []string{"a1", "a5"}; !slices.Equal(got, want) {
+		t.Fatalf("order = %q, want %q", got, want)
+	}
+	// The evicted key is free again.
+	mustPush(t, q, Background, "a7")
+}
+
+func TestUnorderedFullDoesNotEvict(t *testing.T) {
+	q, _ := newQueue(t, Config{PerMin: 100, BackgroundPerMin: 100, BackgroundCap: 1})
+	mustPush(t, q, Background, "b")
+	if _, err := q.Push(Background, "a", "a"); !errors.Is(err, ErrFull) {
+		t.Fatalf("Push = %v, want ErrFull", err)
 	}
 }

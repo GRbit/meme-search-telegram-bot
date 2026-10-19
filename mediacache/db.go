@@ -180,10 +180,11 @@ func (c *Cache) markLibraryFailed(ctx context.Context, rel, reason string) error
 	})
 }
 
-// pendingWarmup lists library files that still need an upload.
+// pendingWarmup lists library files that still need an upload, in no
+// particular order: queueWarmup sorts them by name date.
 func (c *Cache) pendingWarmup(ctx context.Context) ([]string, error) {
 	rows, err := c.db.QueryContext(ctx, `SELECT rel_path FROM mediacache_library
-		WHERE file_id = '' AND failed_at IS NULL ORDER BY rel_path`)
+		WHERE file_id = '' AND failed_at IS NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("mediacache: list pending uploads: %w", err)
 	}

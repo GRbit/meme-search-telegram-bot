@@ -35,6 +35,7 @@ type job struct {
 	relPath  string          // library file the bytes come from or belong to, if any
 	caption  string
 	filename string
+	date     string      // warmup: nameDate of the file
 	data     []byte      // set once downloaded, kept for a retry after 429
 	done     chan result // nil for warmup
 }

@@ -189,20 +189,22 @@ func newCache(ctx context.Context, cfg Config, deps Deps, clock limiter.Clock) (
 		now = time.Now
 	}
 	life, stop := context.WithCancel(context.Background())
+	queue := limiter.New[*job](limiter.Config{
+		PerMin:           cfg.UploadsPerMin,
+		BackgroundPerMin: cfg.WarmupUploadsPerMin,
+		RealtimeCap:      realtimeQueueCap,
+		BackgroundCap:    backgroundQueueCap,
+	}, clock, log)
+	queue.SetOrder(jobBefore)
 	return &Cache{
-		cfg:    cfg,
-		db:     deps.DB,
-		api:    deps.API,
-		sender: deps.Sender,
-		log:    log,
-		now:    now,
-		clock:  clock,
-		queue: limiter.New[*job](limiter.Config{
-			PerMin:           cfg.UploadsPerMin,
-			BackgroundPerMin: cfg.WarmupUploadsPerMin,
-			RealtimeCap:      realtimeQueueCap,
-			BackgroundCap:    backgroundQueueCap,
-		}, clock, log),
+		cfg:         cfg,
+		db:          deps.DB,
+		api:         deps.API,
+		sender:      deps.Sender,
+		log:         log,
+		now:         now,
+		clock:       clock,
+		queue:       queue,
 		life:        life,
 		stopLife:    stop,
 		calls:       map[int64]*call{},

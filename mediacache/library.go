@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -199,11 +200,26 @@ func (c *Cache) queueWarmup(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	jobs := make([]*job, len(rels))
+	for i, rel := range rels {
+		jobs[i] = warmupJob(rel)
+	}
+	// Best first, so a full queue keeps the newest files and the rest waits.
+	slices.SortFunc(jobs, func(a, b *job) int {
+		switch {
+		case jobBefore(a, b):
+			return -1
+		case jobBefore(b, a):
+			return 1
+		}
+		return 0
+	})
 	queued := 0
-	for _, rel := range rels {
-		ok, err := c.pushWarmup(rel)
+	for _, j := range jobs {
+		ok, err := c.queue.Push(limiter.Background, j.key(), j)
 		if errors.Is(err, limiter.ErrFull) {
-			// The rest is picked up by a later scan once the queue drains.
+			// Everything after ranks lower; a later scan retries once the
+			// queue drains (or evicts older files for newer ones).
 			c.log.DebugContext(ctx, "warmup queue full, rest waits for the next scan", "queued", queued, "pending", len(rels))
 			break
 		}
@@ -219,8 +235,14 @@ func (c *Cache) queueWarmup(ctx context.Context) (int, error) {
 	return len(rels), nil
 }
 
+func warmupJob(rel string) *job {
+	base := path.Base(rel)
+	return &job{relPath: rel, caption: rel, filename: base, date: nameDate(base)}
+}
+
 func (c *Cache) pushWarmup(rel string) (bool, error) {
-	return c.queue.Push(limiter.Background, "lib:"+rel, &job{relPath: rel, caption: rel, filename: path.Base(rel)})
+	j := warmupJob(rel)
+	return c.queue.Push(limiter.Background, j.key(), j)
 }
 
 // AddLibraryFile indexes a file that was just written inside LibraryDir and
@@ -272,4 +294,54 @@ func (c *Cache) AddLibraryFile(ctx context.Context, p string) error {
 		c.log.DebugContext(ctx, "add library file: upload not queued", "rel_path", rel, "err", err)
 	}
 	return nil
+}
+
+// nameDate returns the first YYYY-MM-DD in name that is a real calendar date,
+// or "". Warmup orders by it because file times are useless: library files
+// get copied around, which resets them.
+func nameDate(name string) string {
+	const layout = "2006-01-02"
+	for i := 0; i+len(layout) <= len(name); i++ {
+		s := name[i : i+len(layout)]
+		if !isDateShape(s) {
+			continue
+		}
+		if _, err := time.Parse(layout, s); err == nil {
+			return s
+		}
+	}
+	return ""
+}
+
+func isDateShape(s string) bool {
+	for i := range len(s) {
+		if i == 4 || i == 7 {
+			if s[i] != '-' {
+				return false
+			}
+		} else if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// jobBefore is the upload queue order inside a priority. Jobs someone waits
+// for (realtime, demoted inline) come first and stay FIFO among themselves:
+// they must never be evicted from a full queue. Warmup follows, newest name
+// date first, undated files last, ties by rel_path.
+func jobBefore(a, b *job) bool {
+	aw, bw := a.done != nil, b.done != nil
+	switch {
+	case aw != bw:
+		return aw
+	case aw:
+		return false
+	case a.date != b.date:
+		if a.date == "" || b.date == "" {
+			return b.date == ""
+		}
+		return a.date > b.date
+	}
+	return a.relPath < b.relPath
 }

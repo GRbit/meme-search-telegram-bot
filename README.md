@@ -57,6 +57,8 @@ no download from meme-search, no upload, and it is fast.
 
 To make inline search complete from day one, the bot also **warms the cache**: it scans the library folder,
 hashes every image (SHA-256), and uploads the files that have no `file_id` yet, slowly, in the background.
+Newest memes go first, by the first `YYYY-MM-DD` date in the file name (file times are useless once files get
+copied); files without a date go last.
 Search results from the API carry the file name, which is how the bot matches them to local files; when two
 folders contain the same file name, the bot downloads that one meme from the API and picks the file whose
 SHA-256 matches.
