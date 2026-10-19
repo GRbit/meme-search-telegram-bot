@@ -89,7 +89,8 @@ Saving (module `saver`):
 
 5. **Photo or image document -> file** under `SAVE_DIR/<prefix><sender>/`, `<sender>` = Telegram username of the
    person talking to the bot (fallback `id<user id>`), `prefix` from `SAVE_DIR_PREFIX` (default `tg-`). Flat folders
-   only; README says each folder is registered in meme-search Settings -> Image paths by its bare name. File name
+   only; README says each folder is registered in meme-search Settings -> Image paths by its bare name. With
+   `SAVE_MODE=single` every sender shares `SAVE_DIR/<SAVE_FOLDER>/` instead (see Implementation notes). File name
    `YYYY-MM-DD_<source>_<message id>_<sha256 first 20 hex>.<ext>`; `<source>` from `forward_origin` (user username
    or display name, channel username or title), non-forwarded -> sender's username. Sanitising: keep `\p{L}\p{N}`, everything else
    -> `_`, collapse runs, trim. `photo`: largest size; `document`: image MIME only; ignore stickers, GIFs, video.
@@ -121,9 +122,10 @@ Variables (default): `TELEGRAM_BOT_TOKEN` (required), `MEME_SEARCH_URL` (require
 (required, scopes `search:read,media:read`), `CACHE_CHAT_ID` (empty = inline off, no warmup), `LIBRARY_DIR` (=
 `SAVE_DIR`), `WARMUP_INTERVAL` (6h), `CACHE_UPLOADS_PER_MIN` (20), `WARMUP_UPLOADS_PER_MIN` (10), `RESULTS_PER_PAGE`
 (5), `SEARCH_MODE` (vector), `INLINE_RESULTS` (3), `INLINE_DEBOUNCE` (1s), `SAVE_DIR` (`memes/` next to binary),
-`SAVE_DIR_PREFIX` (tg-), `SAVE_NOTE`, `SAVE_USER_IDS`, `TRUSTED_USER_IDS`, `PUBLIC_DAILY_PER_USER` (5),
-`PUBLIC_DAILY_TOTAL` (120), `INLINE_CHARGE_WINDOW` (10s), `ADMIN_CONTACT`, `DEFAULT_LANG` (en), `TZ` (UTC),
-`DB_PATH` (`data/bot.db` next to binary), `CONFIG_FILE`, `LOG_LEVEL` (info).
+`SAVE_MODE` (per_user), `SAVE_FOLDER` (telegram), `SAVE_DIR_PREFIX` (tg-), `SAVE_NOTE`, `SAVE_USER_IDS`,
+`TRUSTED_USER_IDS`, `PUBLIC_DAILY_PER_USER` (5), `PUBLIC_DAILY_TOTAL` (120), `INLINE_CHARGE_WINDOW` (10s),
+`ADMIN_CONTACT`, `DEFAULT_LANG` (en), `TZ` (UTC), `DB_PATH` (`data/bot.db` next to binary), `CONFIG_FILE`,
+`LOG_LEVEL` (info).
 
 Rejected: hybrid search merge, tag filters, collection filters, "show description", GIF/video saving, sending as
 document, `/meme` group command, reverse search by picture, several cache channels.
@@ -239,3 +241,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   scan never rewrites. Parsing and sorting 50k pending names takes about 50ms per scan. A full background queue
   evicts its oldest warmup job for a newer file (the evicted one stays pending and is queued again later); jobs
   someone waits for (realtime, demoted inline) rank before all warmup and are never evicted.
+- Extra settings `SAVE_MODE` (`per_user` default, or `single`) and `SAVE_FOLDER` (default `telegram`): single mode
+  writes every allowed user's memes into `SAVE_DIR/<SAVE_FOLDER>`, so meme-search needs one registered folder and
+  the folder duplicate check covers all users; `SAVE_DIR_PREFIX` is ignored there. `SAVE_FOLDER` is validated
+  (letters, digits, `-`, `_`), not sanitized: the owner registers exactly that name in meme-search.

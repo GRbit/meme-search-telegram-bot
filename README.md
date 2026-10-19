@@ -140,12 +140,15 @@ The bot reads the library (for warmup) and writes saved memes into it. Point `/m
 the **same host folder** that meme-search mounts as `/rails/public/memes` (and the description generator as
 `/app/public/memes`). In the stock meme-search compose file that is `./meme_search/memes/`.
 
-The bot saves each user's memes into a flat subfolder `<SAVE_DIR_PREFIX><username>`, e.g. `tg-alice/`, named
+By default (`SAVE_MODE=per_user`) the bot saves each user's memes into a flat subfolder
+`<SAVE_DIR_PREFIX><username>`, e.g. `tg-alice/`. With `SAVE_MODE=single` everybody's memes go into one subfolder,
+`SAVE_FOLDER` (default `telegram/`), and a meme two users send is saved once. Files are named
 `2026-10-18_<source>_<message id>_<hash>.jpg`, where the source is the channel or person the meme was forwarded
 from and the hash is the first 20 hex chars of the file's SHA-256.
-meme-search does not pick up new folders by itself, and it serves images only from flat folders: after a user
-saved the first meme, register the folder in meme-search **Settings -> Image paths** by its bare name
-(`tg-alice`). New files in a registered folder are indexed on the next rescan and become searchable once their
+meme-search does not pick up new folders by itself, and it serves images only from flat folders: register the
+folder in meme-search **Settings -> Image paths** by its bare name. In single mode that is one folder
+(`telegram`), registered once; in per_user mode it is one per user (`tg-alice`), after they saved the first meme.
+New files in a registered folder are indexed on the next rescan and become searchable once their
 description is generated.
 
 Files are written as uid 1000 (the image's default, the same as meme-search's upload folder). If your folder
@@ -203,7 +206,9 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `CACHE_UPLOADS_PER_MIN` | `20` | All uploads to the cache channel per minute |
 | `WARMUP_UPLOADS_PER_MIN` | `10` | Background warmup uploads per minute, at most the value above |
 | `SAVE_DIR` | `memes/` next to the binary, `/memes` in Docker | Where saved memes go |
-| `SAVE_DIR_PREFIX` | `tg-` | Prefix of per-user save folders |
+| `SAVE_MODE` | `per_user` | `per_user`: a folder per user; `single`: one folder for everybody |
+| `SAVE_FOLDER` | `telegram` | The folder of `single` mode; letters, digits, `-`, `_` |
+| `SAVE_DIR_PREFIX` | `tg-` | Prefix of per-user save folders (`per_user` mode) |
 | `SAVE_NOTE` | empty | Text added to the "Saved" reply |
 | `SAVE_USER_IDS` | empty | User ids allowed to save; empty disables saving |
 | `TRUSTED_USER_IDS` | empty | User ids with unlimited search |
@@ -231,8 +236,8 @@ they do not cost extra. Counters are stored in SQLite and reset at midnight in
   whether inline mode is on. Right after the first start the cache is empty: results appear as uploads finish.
 - **"Search failed":** run with `LOG_LEVEL=debug`; a `401`/`403` from meme-search means a wrong token or a
   missing scope.
-- **Saved memes do not show up:** register the `tg-<username>` folder in meme-search Settings -> Image paths and
-  wait for descriptions to be generated.
+- **Saved memes do not show up:** register the save folder (`tg-<username>`, or `SAVE_FOLDER` in single mode)
+  in meme-search Settings -> Image paths and wait for descriptions to be generated.
 - **Permission denied writing memes or the database:** the mounted folders must be writable by uid 1000 (or the
   `APP_UID` you built with).
 

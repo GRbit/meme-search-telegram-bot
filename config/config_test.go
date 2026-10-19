@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
+	"github.com/grbit/meme-search-telegram-bot/saver"
 )
 
 // required is the minimal environ that passes validation.
@@ -73,6 +74,8 @@ func TestDefaults(t *testing.T) {
 	want.Access.Location = time.UTC
 	want.Saver.Dir = filepath.Join(exe, "memes")
 	want.Saver.DirPrefix = "tg-"
+	want.Saver.Mode = saver.ModePerUser
+	want.Saver.Folder = "telegram"
 	want.Saver.Location = time.UTC
 
 	if !reflect.DeepEqual(c, want) {
@@ -98,6 +101,8 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		"INLINE_DEBOUNCE=250ms",
 		"SAVE_DIR=/save",
 		"SAVE_DIR_PREFIX=bot-",
+		"SAVE_MODE=single",
+		"SAVE_FOLDER=all_memes",
 		"SAVE_NOTE=see you",
 		"SAVE_USER_IDS=1, 2,3",
 		"TRUSTED_USER_IDS= 4 ,5 ",
@@ -134,6 +139,8 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		{"Search.InlineDebounce", c.Search.InlineDebounce, 250 * time.Millisecond},
 		{"Saver.Dir", c.Saver.Dir, "/save"},
 		{"Saver.DirPrefix", c.Saver.DirPrefix, "bot-"},
+		{"Saver.Mode", c.Saver.Mode, saver.ModeSingle},
+		{"Saver.Folder", c.Saver.Folder, "all_memes"},
 		{"Saver.Note", c.Saver.Note, "see you"},
 		{"Access.SaveUserIDs", c.Access.SaveUserIDs, []int64{1, 2, 3}},
 		{"Access.TrustedUserIDs", c.Access.TrustedUserIDs, []int64{4, 5}},
@@ -307,6 +314,8 @@ func TestValidation(t *testing.T) {
 		{"warmup above total", env("CACHE_UPLOADS_PER_MIN=5", "WARMUP_UPLOADS_PER_MIN=6"), "WARMUP_UPLOADS_PER_MIN"},
 		{"chat id bad", env("CACHE_CHAT_ID=@channel"), "CACHE_CHAT_ID"},
 		{"ids bad", env("SAVE_USER_IDS=1,x"), "SAVE_USER_IDS"},
+		{"save mode unknown", env("SAVE_MODE=shared"), "SAVE_MODE"},
+		{"save folder nested", env("SAVE_MODE=single", "SAVE_FOLDER=a/b"), "SAVE_FOLDER"},
 		{"ids not positive", env("SAVE_USER_IDS=1,0"), "SAVE_USER_IDS"},
 		{"trusted negative", env("TRUSTED_USER_IDS=-5"), "TRUSTED_USER_IDS"},
 		{"trusted bad", env("TRUSTED_USER_IDS=1;2"), "TRUSTED_USER_IDS"},

@@ -13,6 +13,7 @@ import (
 	"os"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/go-telegram/bot"
 
@@ -35,11 +36,44 @@ func LocaleFS() fs.FS {
 
 // Config tunes the module. Zero values mean the defaults noted per field.
 type Config struct {
-	Dir           string         // library root, required; per-sender folders are created inside
-	DirPrefix     string         // folder name prefix, e.g. "tg-"; may be empty
+	Dir           string         // library root, required; save folders are created inside
+	DirPrefix     string         // per_user folder name prefix, e.g. "tg-"; may be empty
 	Note          string         // appended to the "saved" reply
 	AlbumDebounce time.Duration  // wait after the last album item before replying; 0 means 2s
 	Location      *time.Location // date in file names; nil means UTC
+	Mode          Mode           // "" means ModePerUser
+	// Folder is the one folder of ModeSingle: letters, digits, "-" and "_"
+	// only, so it is a single path element meme-search can register by name.
+	// "" means "telegram".
+	Folder string
+}
+
+// Mode chooses the save folder layout.
+type Mode string
+
+// Save modes.
+//
+// meme-search collections are weak, so an owner may prefer one folder for
+// everyone (registered once, deduplicated across users) to a folder per user.
+const (
+	ModePerUser Mode = "per_user" // Dir/<DirPrefix><sender>
+	ModeSingle  Mode = "single"   // Dir/<Folder> for every sender
+)
+
+const defaultFolder = "telegram"
+
+// validFolder accepts what sanitize would keep plus "-" and "_", so the
+// folder is never nested, hidden (the library scan skips dot folders) or "..".
+func validFolder(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // Validate reports every invalid field as a *configerr.Field.
@@ -50,6 +84,16 @@ func (c Config) Validate() error {
 	}
 	if c.AlbumDebounce < 0 {
 		errs = append(errs, &configerr.Field{Name: "AlbumDebounce", Reason: "must not be negative"})
+	}
+	switch c.Mode {
+	case "", ModePerUser, ModeSingle:
+	default:
+		errs = append(errs, &configerr.Field{Name: "Mode",
+			Reason: fmt.Sprintf("must be %q or %q, got %q", ModePerUser, ModeSingle, c.Mode)})
+	}
+	if c.Folder != "" && !validFolder(c.Folder) {
+		errs = append(errs, &configerr.Field{Name: "Folder",
+			Reason: fmt.Sprintf("must be one folder name of letters, digits, - and _, got %q", c.Folder)})
 	}
 	return errors.Join(errs...)
 }
@@ -116,6 +160,12 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	if cfg.Location == nil {
 		cfg.Location = time.UTC
 	}
+	if cfg.Mode == "" {
+		cfg.Mode = ModePerUser
+	}
+	if cfg.Folder == "" {
+		cfg.Folder = defaultFolder
+	}
 	if deps.Log == nil {
 		deps.Log = slog.New(slog.DiscardHandler)
 	}
@@ -131,7 +181,11 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	}
 	m := &Module{cfg: cfg, deps: deps, log: deps.Log, httpc: httpc, downloadTimeout: defaultDownloadTimeout, hashes: folderHashes{}}
 	m.albums = newAlbums(cfg.AlbumDebounce, m.flushAlbum)
-	deps.Log.Info("saver: enabled", "dir", cfg.Dir, "dir_prefix", cfg.DirPrefix)
+	if cfg.Mode == ModeSingle {
+		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "dir", cfg.Dir, "folder", cfg.Folder)
+	} else {
+		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "dir", cfg.Dir, "dir_prefix", cfg.DirPrefix)
+	}
 	return m, nil
 }
 

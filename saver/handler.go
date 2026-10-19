@@ -153,7 +153,8 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 	if msg.Date != 0 {
 		date = time.Unix(int64(msg.Date), 0)
 	}
-	folder := filepath.Join(m.cfg.Dir, m.cfg.DirPrefix+senderName(msg.From))
+	folder := m.saveFolder(msg.From)
+	log.Debug("saver: save folder", "mode", string(m.cfg.Mode), "folder", folder)
 	base := fileBase(date.In(m.cfg.Location), sourceName(msg), msg.ID, sum)
 	ext := pickExt(filePath, ref.MIME)
 
@@ -169,7 +170,7 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 	m.mu.Unlock()
 	switch {
 	case dup:
-		log.Debug("saver: duplicate in sender folder", "folder", folder)
+		log.Debug("saver: duplicate in save folder", "folder", folder)
 		return outDuplicate
 	case err != nil:
 		m.log.Warn("saver: write failed", "user_id", msg.From.ID, "folder", folder, "err", err)
@@ -183,6 +184,13 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 		}
 	}
 	return outSaved
+}
+
+func (m *Module) saveFolder(from *models.User) string {
+	if m.cfg.Mode == ModeSingle {
+		return filepath.Join(m.cfg.Dir, m.cfg.Folder)
+	}
+	return filepath.Join(m.cfg.Dir, m.cfg.DirPrefix+senderName(from))
 }
 
 // download returns the bytes and Telegram's file path (used for the extension).

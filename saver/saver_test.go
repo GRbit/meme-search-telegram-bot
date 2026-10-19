@@ -538,3 +538,82 @@ func TestStalledDownloadTimesOut(t *testing.T) {
 	}
 	<-done
 }
+
+func bobMsg(id int, fileID string) models.Message {
+	m := photoMsg(id, fileID)
+	m.From = &models.User{ID: 2, Username: "bob"}
+	m.Chat.ID = 2
+	return m
+}
+
+func TestSingleModeOneFolderForEveryone(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.Mode = ModeSingle })
+	e.mod.deps.Permit = fakePermit{1: true, 2: true}
+	e.api.files["a"] = []byte("alice-meme")
+	e.api.files["b"] = []byte("bob-meme")
+	e.send(photoMsg(1, "a"))
+	e.api.reply(t)
+	e.send(bobMsg(2, "b"))
+	e.api.reply(t)
+	want := []string{"2026-10-18_alice_1_" + hash20("alice-meme") + ".jpg", "2026-10-18_bob_2_" + hash20("bob-meme") + ".jpg"}
+	if got := e.ls(t, "telegram"); !slices.Equal(got, want) {
+		t.Fatalf("files = %v, want %v", got, want)
+	}
+	if got := e.ls(t, "."); !slices.Equal(got, []string{"telegram"}) {
+		t.Fatalf("folders = %v (SAVE_DIR_PREFIX must be ignored)", got)
+	}
+}
+
+// One folder means one duplicate check: a meme bob forwards after alice saved
+// it is not stored twice.
+func TestSingleModeDedupAcrossUsers(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.Mode = ModeSingle; c.Folder = "shared-memes" })
+	e.mod.deps.Permit = fakePermit{1: true, 2: true}
+	e.api.files["a"] = []byte("same")
+	e.api.files["b"] = []byte("same")
+	e.send(photoMsg(1, "a"))
+	e.api.reply(t)
+	e.send(bobMsg(2, "b"))
+	if got := e.api.reply(t); got != "Already saved." {
+		t.Fatalf("reply = %q", got)
+	}
+	if got := e.ls(t, "shared-memes"); len(got) != 1 {
+		t.Fatalf("files = %v", got)
+	}
+}
+
+func TestPerUserModeIsDefault(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.Mode = ModePerUser; c.Folder = "ignored" })
+	e.api.files["a"] = []byte("x")
+	e.send(photoMsg(1, "a"))
+	e.api.reply(t)
+	if got := e.ls(t, "."); !slices.Equal(got, []string{"tg-alice"}) {
+		t.Fatalf("folders = %v", got)
+	}
+}
+
+func TestModeAndFolderValidation(t *testing.T) {
+	for _, c := range []struct {
+		cfg   Config
+		field string
+	}{
+		{Config{Dir: "x", Mode: "shared"}, "Mode"},
+		{Config{Dir: "x", Mode: ModeSingle, Folder: "a/b"}, "Folder"},
+		{Config{Dir: "x", Mode: ModeSingle, Folder: ".."}, "Folder"},
+		{Config{Dir: "x", Mode: ModeSingle, Folder: ".hidden"}, "Folder"},
+		{Config{Dir: "x", Mode: ModeSingle, Folder: "my memes"}, "Folder"},
+	} {
+		fields, _ := configerr.Fields(c.cfg.Validate())
+		if len(fields) != 1 || fields[0].Name != c.field {
+			t.Errorf("%+v: fields = %+v, want %s", c.cfg, fields, c.field)
+		}
+	}
+	for _, ok := range []Config{
+		{Dir: "x"}, {Dir: "x", Mode: ModePerUser}, {Dir: "x", Mode: ModeSingle},
+		{Dir: "x", Mode: ModeSingle, Folder: "Telegram_memes-2"}, {Dir: "x", Mode: ModeSingle, Folder: "мемы"},
+	} {
+		if err := ok.Validate(); err != nil {
+			t.Errorf("%+v: %v", ok, err)
+		}
+	}
+}

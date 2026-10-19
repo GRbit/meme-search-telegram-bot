@@ -5,7 +5,8 @@
 - **Meme**: one image known to meme-search, identified by a sparse integer **meme id**; carries a base **file name** (no directory) and a description.
 - **Library**: the folders meme-search indexes. **Library dir** (`LIBRARY_DIR`) is their common root as the bot sees it.
 - **Image path**: a library folder registered in meme-search Settings -> Image paths, by bare folder name; only flat folders are served.
-- **Save folder**: the per-sender folder `<prefix><sender>` the saver writes into, inside the library dir.
+- **Save folder**: the folder the saver writes into, inside the library dir: per sender `<prefix><sender>`
+  (`SAVE_MODE=per_user`) or one shared `SAVE_FOLDER` (`SAVE_MODE=single`).
 - **Cache channel**: a private Telegram channel (`CACHE_CHAT_ID`) the bot uploads memes to so it gets a **file_id** for each.
 - **file_id**: Telegram's handle for an uploaded file; lets the bot send it again without re-uploading. Inline results accept only file_ids (or public URLs).
 - **file_unique_id**: Telegram's stable id of the same file across chats and bots; used to recognise a meme the bot itself sent.
