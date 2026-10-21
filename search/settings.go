@@ -195,15 +195,7 @@ func parseTagList(text string) ([]string, tagProblem) {
 		seen[t] = true
 		out = append(out, t)
 	}
-	if len(out) > memesearch.MaxTags {
-		return out, tagsTooMany
-	}
-	for _, t := range out {
-		if utf8.RuneCountInString(t) > memesearch.MaxTagLen {
-			return out, tagsTooLong
-		}
-	}
-	return out, tagsOK
+	return out, tagProblemOf(out)
 }
 
 func longestTag(tags []string) string {

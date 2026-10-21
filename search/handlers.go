@@ -97,18 +97,35 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 	msg := u.Message
 	user := msg.From.ID
 	loc := m.deps.I18n.Localizer(msg.From.LanguageCode)
-	q, ok := searchQuery(msg.Text)
+	o := parseOverrides(msg.Text)
+	q, ok := searchQuery(o.query)
 	m.log.DebugContext(ctx, "search: text", "update", "message", "user_id", user, "query", q,
-		"query_len", utf8.RuneCountInString(q))
-	if !ok {
+		"query_len", utf8.RuneCountInString(q), "tags", o.tags, "folders", o.folders, "all_folders", o.allFolders)
+	switch {
+	case q == "":
+		m.log.DebugContext(ctx, "search: filters without a query", "user_id", user)
+		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.filters_only", nil), nil)
+		return
+	case !ok:
 		m.log.DebugContext(ctx, "search: query too long", "user_id", user)
 		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.query_too_long", map[string]any{"Max": memesearch.MaxQueryLen}), nil)
 		return
 	}
-	p := m.loadPrefs(ctx, user)
-	opts := memesearch.SearchOptions{Mode: m.effectiveMode(p), Limit: memesearch.MaxLimit, Tags: p.Tags}
-	m.log.DebugContext(ctx, "search: scope", "user_id", user, "mode", string(opts.Mode), "tags", opts.Tags)
-	found, err := m.deps.API.Search(ctx, q, opts)
+	switch tagProblemOf(o.tags) {
+	case tagsTooMany:
+		m.log.DebugContext(ctx, "search: too many tags in query", "user_id", user, "count", len(o.tags))
+		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.query_tags_too_many", map[string]any{"Max": memesearch.MaxTags}), nil)
+		return
+	case tagsTooLong:
+		m.log.DebugContext(ctx, "search: tag too long in query", "user_id", user)
+		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.query_tag_too_long",
+			map[string]any{"Tag": longestTag(o.tags), "Len": memesearch.MaxTagLen}), nil)
+		return
+	}
+	sc := m.privateScope(m.loadPrefs(ctx, user), o)
+	m.log.DebugContext(ctx, "search: scope", "user_id", user, "mode", string(sc.mode), "tags", sc.tags,
+		"folders_not_applied", sc.folders)
+	found, err := m.deps.API.Search(ctx, q, sc.options(memesearch.MaxLimit))
 	if err != nil {
 		m.sendText(ctx, b, msg.Chat.ID, m.searchError(ctx, loc, user, err), nil)
 		return
@@ -118,7 +135,7 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.no_results", map[string]any{"Query": q}), nil)
 		return
 	}
-	s := &session{owner: user, chat: msg.Chat.ID, memes: found, created: m.now()}
+	s := &session{owner: user, chat: msg.Chat.ID, memes: found, created: m.now(), query: q, scope: sc}
 	tok := m.pages.put(s, m.now())
 	m.log.DebugContext(ctx, "search: session stored", "user_id", user, "pages",
 		pageCount(len(found), m.cfg.ResultsPerPage), "sessions", m.pages.len())
@@ -152,7 +169,11 @@ func (m *Module) sendPage(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, 
 			{Text: loc.T("search.more", nil), CallbackData: moreData(tok, page+1)},
 		}}}
 	}
-	m.sendText(ctx, b, s.chat, loc.T("search.page", map[string]any{"Page": page, "Pages": pages}), kb)
+	text := loc.T("search.page", map[string]any{"Page": page, "Pages": pages})
+	if page == 1 && len(s.scope.folders) > 0 {
+		text = loc.T("search.folders_unsupported", nil) + "\n" + text
+	}
+	m.sendText(ctx, b, s.chat, text, kb)
 }
 
 func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Update) {

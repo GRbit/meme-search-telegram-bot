@@ -256,3 +256,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   list a user types after "Set tags" is caught by a handler registered before text search and without the access
   middleware, so it is neither a search nor charged; the waiting state is in memory (10 min) and a restart just
   turns that text into a search.
+- Per-query overrides (tasks 1.2) are parsed by word: `#x` is a tag, `dir:x` a folder (prefix case-insensitive),
+  `dir:*` drops saved folders; explicit `dir:x` wins over `dir:*`. Trailing `,` or `;` is cut from tags. Folders
+  are parsed and kept in the session but never sent (no API support); the first control message says all folders
+  were searched. `Chargeable` parses the same way, so filters-only or over-limit tag messages are not charged.

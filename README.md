@@ -197,6 +197,12 @@ Then open the bot in Telegram and send `/start`.
   - **Tags** limit search to memes having any of the given tags (at most 10, as meme-search allows). Until
     meme-search can list its tags, type them separated by commas.
   - **Reset** returns to the defaults. Changing settings never counts against the daily limit.
+- Filters typed into one search replace the saved value of their kind for that search only:
+  - `#tag` (repeatable) searches only memes with any of these tags, e.g. `#cat #dog funny`.
+  - `dir:folder` (repeatable) and `dir:*` (ignore saved folders) are understood, but meme-search cannot filter by
+    folder yet: the bot searches all folders and says so.
+  - Words starting with `#` inside a word (`c#`) stay part of the query. A message with filters only is not a
+    search and does not count.
 
 ## Configuration
 

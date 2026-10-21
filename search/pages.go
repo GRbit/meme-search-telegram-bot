@@ -27,6 +27,10 @@ type session struct {
 	chat    int64
 	memes   []memesearch.Meme
 	created time.Time
+	// query and scope are kept for what reruns the search: "Search
+	// everywhere" and "Similar".
+	query string
+	scope scope
 }
 
 // pageStore keeps sessions in memory; a restart loses them and the user gets

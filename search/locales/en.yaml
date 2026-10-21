@@ -23,3 +23,7 @@ search.settings_tags_prompt: "Send tags separated by commas, at most {{.Max}}, e
 search.settings_tags_too_many: "Too many tags: at most {{.Max}}. Send the list again or /cancel."
 search.settings_tags_too_long: "Tag \"{{.Tag}}\" is too long: at most {{.Len}} characters. Send the list again or /cancel."
 search.settings_cancelled: "Tags unchanged."
+search.filters_only: "Add words to search for, e.g. \"#cat funny\". #tag limits one search to a tag, dir:folder to a folder, dir:* ignores your saved folders."
+search.query_tags_too_many: "Too many #tags in one search: at most {{.Max}}."
+search.query_tag_too_long: "Tag \"{{.Tag}}\" is too long: at most {{.Len}} characters."
+search.folders_unsupported: "The meme-search server cannot filter by folder yet, so all folders were searched."

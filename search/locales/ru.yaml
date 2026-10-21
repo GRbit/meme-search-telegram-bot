@@ -22,3 +22,7 @@ search.settings_tags_prompt: "Пришли теги через запятую, �
 search.settings_tags_too_many: "Слишком много тегов: максимум {{.Max}}. Пришли список ещё раз или /cancel."
 search.settings_tags_too_long: "Тег \"{{.Tag}}\" слишком длинный: максимум {{.Len}} символов. Пришли список ещё раз или /cancel."
 search.settings_cancelled: "Теги не изменились."
+search.filters_only: "Добавь слова для поиска, например \"#кот смешной\". #тег ограничивает один поиск тегом, dir:папка папкой, dir:* отменяет сохранённые папки."
+search.query_tags_too_many: "Слишком много #тегов в одном поиске: максимум {{.Max}}."
+search.query_tag_too_long: "Тег \"{{.Tag}}\" слишком длинный: максимум {{.Len}} символов."
+search.folders_unsupported: "Сервер meme-search пока не умеет искать по папкам, поэтому искал во всех."

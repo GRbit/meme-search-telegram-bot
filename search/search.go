@@ -217,8 +217,9 @@ func (m *Module) Register(b *bot.Bot) {
 func Chargeable(u *models.Update) bool {
 	switch {
 	case isTextSearch(u):
-		_, ok := searchQuery(u.Message.Text)
-		return ok
+		o := parseOverrides(u.Message.Text)
+		_, ok := searchQuery(o.query)
+		return ok && tagProblemOf(o.tags) == tagsOK
 	case isInline(u):
 		_, ok := searchQuery(u.InlineQuery.Query)
 		return ok
