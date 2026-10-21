@@ -260,3 +260,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   `dir:*` drops saved folders; explicit `dir:x` wins over `dir:*`. Trailing `,` or `;` is cut from tags. Folders
   are parsed and kept in the session but never sent (no API support); the first control message says all folders
   were searched. `Chargeable` parses the same way, so filters-only or over-limit tag messages are not charged.
+- Scope display (tasks 1.3): the scope line sits in the control message of page 1 (albums cannot carry a caption
+  plus buttons reliably). "Search everywhere" (`srch:e:<token>`) keeps the mode and drops tags and folders; it is
+  offered only with tags, since folders are not applied yet and mode is not a filter. It is charged like a search.
+  An empty tagged result keeps a session only for that button.

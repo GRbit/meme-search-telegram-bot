@@ -27,3 +27,8 @@ search.filters_only: "Add words to search for, e.g. \"#cat funny\". #tag limits 
 search.query_tags_too_many: "Too many #tags in one search: at most {{.Max}}."
 search.query_tag_too_long: "Tag \"{{.Tag}}\" is too long: at most {{.Len}} characters."
 search.folders_unsupported: "The meme-search server cannot filter by folder yet, so all folders were searched."
+search.scope_line: "Search: {{.Scope}}"
+search.scope_tags: "tags: {{.Tags}}"
+search.scope_folders: "folders: {{.Folders}}"
+search.no_results_scoped: "Nothing found for \"{{.Query}}\" ({{.Scope}})."
+search.everywhere: "Search everywhere"

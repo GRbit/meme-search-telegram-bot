@@ -15,6 +15,8 @@ import (
 const (
 	morePrefix    = CallbackPrefix + "m:"
 	similarPrefix = CallbackPrefix + "s:" // reserved for "similar" buttons (phase 4)
+	// everywherePrefix reruns a session's query without tags and folders.
+	everywherePrefix = CallbackPrefix + "e:"
 
 	// maxSessions bounds memory: at 20 memes per search this is a few MB at worst.
 	maxSessions = 5000

@@ -122,20 +122,32 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 			map[string]any{"Tag": longestTag(o.tags), "Len": memesearch.MaxTagLen}), nil)
 		return
 	}
-	sc := m.privateScope(m.loadPrefs(ctx, user), o)
+	m.runSearch(ctx, b, loc, user, msg.Chat.ID, q, m.privateScope(m.loadPrefs(ctx, user), o))
+}
+
+// runSearch searches q within sc and sends page 1 to chat; text searches and
+// the buttons that rerun a search all end here.
+func (m *Module) runSearch(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64, q string, sc scope) {
 	m.log.DebugContext(ctx, "search: scope", "user_id", user, "mode", string(sc.mode), "tags", sc.tags,
 		"folders_not_applied", sc.folders)
 	found, err := m.deps.API.Search(ctx, q, sc.options(memesearch.MaxLimit))
 	if err != nil {
-		m.sendText(ctx, b, msg.Chat.ID, m.searchError(ctx, loc, user, err), nil)
+		m.sendText(ctx, b, chat, m.searchError(ctx, loc, user, err), nil)
 		return
 	}
 	m.log.DebugContext(ctx, "search: results", "user_id", user, "count", len(found))
+	s := &session{owner: user, chat: chat, memes: found, created: m.now(), query: q, scope: sc}
 	if len(found) == 0 {
-		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.no_results", map[string]any{"Query": q}), nil)
+		if !sc.filtered() {
+			m.sendText(ctx, b, chat, loc.T("search.no_results", map[string]any{"Query": q}), nil)
+			return
+		}
+		// Kept only for the "Search everywhere" button.
+		tok := m.pages.put(s, m.now())
+		m.sendText(ctx, b, chat, loc.T("search.no_results_scoped",
+			map[string]any{"Query": q, "Scope": m.describeScope(loc, sc)}), m.everywhereKeyboard(loc, tok))
 		return
 	}
-	s := &session{owner: user, chat: msg.Chat.ID, memes: found, created: m.now(), query: q, scope: sc}
 	tok := m.pages.put(s, m.now())
 	m.log.DebugContext(ctx, "search: session stored", "user_id", user, "pages",
 		pageCount(len(found), m.cfg.ResultsPerPage), "sessions", m.pages.len())
@@ -163,25 +175,65 @@ func (m *Module) sendPage(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, 
 		m.sendText(ctx, b, s.chat, loc.T("search.error", nil), nil)
 		return
 	}
-	var kb models.ReplyMarkup
+	var rows [][]models.InlineKeyboardButton
 	if page < pages {
-		kb = &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
-			{Text: loc.T("search.more", nil), CallbackData: moreData(tok, page+1)},
-		}}}
+		rows = append(rows, []models.InlineKeyboardButton{{Text: loc.T("search.more", nil), CallbackData: moreData(tok, page+1)}})
 	}
-	text := loc.T("search.page", map[string]any{"Page": page, "Pages": pages})
-	if page == 1 && len(s.scope.folders) > 0 {
-		text = loc.T("search.folders_unsupported", nil) + "\n" + text
+	lines := []string{loc.T("search.page", map[string]any{"Page": page, "Pages": pages})}
+	if page == 1 {
+		if len(s.scope.folders) > 0 {
+			lines = append([]string{loc.T("search.folders_unsupported", nil)}, lines...)
+		}
+		if !m.isDefaultScope(s.scope) {
+			lines = append([]string{loc.T("search.scope_line", map[string]any{"Scope": m.describeScope(loc, s.scope)})}, lines...)
+		}
+		if s.scope.filtered() {
+			rows = append(rows, m.everywhereKeyboard(loc, tok).InlineKeyboard...)
+		}
 	}
-	m.sendText(ctx, b, s.chat, text, kb)
+	var kb models.ReplyMarkup
+	if len(rows) > 0 {
+		kb = &models.InlineKeyboardMarkup{InlineKeyboard: rows}
+	}
+	m.sendText(ctx, b, s.chat, strings.Join(lines, "\n"), kb)
+}
+
+func (m *Module) everywhereKeyboard(loc *i18n.Localizer, tok string) *models.InlineKeyboardMarkup {
+	return &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+		{{Text: loc.T("search.everywhere", nil), CallbackData: everywherePrefix + tok}},
+	}}
+}
+
+// handleEverywhere reruns a session's query without tags and folders.
+func (m *Module) handleEverywhere(ctx context.Context, b *bot.Bot, cq *models.CallbackQuery) {
+	loc := m.deps.I18n.Localizer(cq.From.LanguageCode)
+	tok := strings.TrimPrefix(cq.Data, everywherePrefix)
+	s := m.pages.get(tok, m.now())
+	switch {
+	case s == nil:
+		m.log.DebugContext(ctx, "search: everywhere on expired session", "user_id", cq.From.ID)
+		m.answerCallback(ctx, b, cq.ID, loc.T("search.expired", nil))
+		return
+	case s.owner != cq.From.ID:
+		m.log.DebugContext(ctx, "search: foreign everywhere refused", "user_id", cq.From.ID, "owner", s.owner)
+		m.answerCallback(ctx, b, cq.ID, loc.T("search.not_owner", nil))
+		return
+	}
+	m.answerCallback(ctx, b, cq.ID, "")
+	m.log.DebugContext(ctx, "search: search everywhere", "user_id", cq.From.ID, "query", s.query)
+	m.runSearch(ctx, b, loc, cq.From.ID, s.chat, s.query, scope{mode: s.scope.mode})
 }
 
 func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Update) {
 	cq := u.CallbackQuery
 	loc := m.deps.I18n.Localizer(cq.From.LanguageCode)
 	m.log.DebugContext(ctx, "search: callback", "update", "callback_query", "user_id", cq.From.ID, "data", cq.Data)
-	if strings.HasPrefix(cq.Data, settingsPrefix) {
+	switch {
+	case strings.HasPrefix(cq.Data, settingsPrefix):
 		m.handleSettingsCallback(ctx, b, cq)
+		return
+	case strings.HasPrefix(cq.Data, everywherePrefix):
+		m.handleEverywhere(ctx, b, cq)
 		return
 	}
 	tok, page, ok := parseMore(cq.Data)

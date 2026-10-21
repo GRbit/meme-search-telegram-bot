@@ -203,6 +203,9 @@ Then open the bot in Telegram and send `/start`.
     folder yet: the bot searches all folders and says so.
   - Words starting with `#` inside a word (`c#`) stay part of the query. A message with filters only is not a
     search and does not count.
+- When a search is not the default one, the message under the results says what applied (e.g. "Search: Words,
+  tags: cat"); with tags there is a "Search everywhere" button that repeats the search without them (it counts as
+  a search). An empty result with tags says so and offers the same button.
 
 ## Configuration
 

@@ -26,3 +26,8 @@ search.filters_only: "Добавь слова для поиска, наприм�
 search.query_tags_too_many: "Слишком много #тегов в одном поиске: максимум {{.Max}}."
 search.query_tag_too_long: "Тег \"{{.Tag}}\" слишком длинный: максимум {{.Len}} символов."
 search.folders_unsupported: "Сервер meme-search пока не умеет искать по папкам, поэтому искал во всех."
+search.scope_line: "Поиск: {{.Scope}}"
+search.scope_tags: "теги: {{.Tags}}"
+search.scope_folders: "папки: {{.Folders}}"
+search.no_results_scoped: "По запросу \"{{.Query}}\" ничего не нашлось ({{.Scope}})."
+search.everywhere: "Искать везде"
