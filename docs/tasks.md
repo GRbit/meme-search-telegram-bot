@@ -98,3 +98,10 @@ Replace 1.6's description query with `GET /api/v1/memes/:id/similar` (exact, no 
 New saver backend: `POST /api/v2/memes` with a `media:write` token into a chosen folder, so saving works without
 a shared volume and the meme is searchable without waiting for a rescan. Keep the folder writer for setups
 without the write API.
+
+### 2.7 Nested save folders (needs L)
+
+`SAVE_MODE=nested`: every saver gets `SAVE_DIR/<SAVE_FOLDER>/<user>/` (one level, like L supports). With the parent
+registered once in meme-search with "include subfolders", a user added to `SAVE_USER_IDS` is searchable after
+the next scan of the parent, with no server change. Existing `tg-*` folders stay as they are (moving them loses
+meme-search descriptions until upstream K exists).
