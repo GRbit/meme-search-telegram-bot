@@ -4,6 +4,7 @@ package search
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/grbit/meme-search-telegram-bot/mediacache"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 	"github.com/grbit/meme-search-telegram-bot/module"
+	"github.com/grbit/meme-search-telegram-bot/store"
 )
 
 //go:embed locales/*.yaml
@@ -111,6 +113,8 @@ type Deps struct {
 	// Middlewares wrap every handler that may run a search (access limits).
 	Middlewares []bot.Middleware
 	Now         func() time.Time // nil means time.Now
+	// DB holds the search_ tables (user settings); required.
+	DB *sql.DB
 }
 
 // Module implements module.Module.
@@ -123,6 +127,7 @@ type Module struct {
 	me     botName
 	after  func(time.Duration) (<-chan time.Time, func())
 	inline latestQueries
+	inputs pendingInputs
 }
 
 var _ module.Module = (*Module)(nil)
@@ -139,6 +144,16 @@ func New(cfg Config, deps Deps) (*Module, error) {
 		return nil, errors.New("search: Deps.Media is nil (use mediacache.NewDirect(api, log) to run without a media cache)")
 	case deps.I18n == nil:
 		return nil, errors.New("search: Deps.I18n is nil")
+	case deps.DB == nil:
+		return nil, errors.New("search: Deps.DB is nil")
+	}
+	// New takes no context: the migration is a local SQLite step at startup.
+	ctx := context.Background()
+	if err := store.Check(ctx, deps.DB); err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+	if err := store.Migrate(ctx, deps.DB, "search", migrations); err != nil {
+		return nil, fmt.Errorf("search: %w", err)
 	}
 	if cfg.ResultsPerPage == 0 {
 		cfg.ResultsPerPage = defaultResultsPerPage
@@ -177,8 +192,11 @@ func New(cfg Config, deps Deps) (*Module, error) {
 // Commands skip Deps.Middlewares because they never run a search.
 func (m *Module) Register(b *bot.Bot) {
 	mw := m.deps.Middlewares
+	// First: a tag list typed after "Set tags" is not a search and not charged.
+	b.RegisterHandlerMatchFunc(m.isPendingInput, m.handlePendingInput)
 	b.RegisterHandlerMatchFunc(isTextSearch, m.handleText, mw...)
 	b.RegisterHandlerMatchFunc(isCommand, m.handleCommand)
+	b.RegisterHandlerMatchFunc(isSettingsCommand, m.handleSettingsCommand)
 	b.RegisterHandlerMatchFunc(isOwnCallback, m.handleCallback, mw...)
 	inline := m.deps.Media.UploadsEnabled()
 	if inline {

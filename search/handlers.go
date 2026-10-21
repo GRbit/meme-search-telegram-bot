@@ -105,7 +105,10 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.query_too_long", map[string]any{"Max": memesearch.MaxQueryLen}), nil)
 		return
 	}
-	found, err := m.deps.API.Search(ctx, q, memesearch.SearchOptions{Mode: m.cfg.Mode, Limit: memesearch.MaxLimit})
+	p := m.loadPrefs(ctx, user)
+	opts := memesearch.SearchOptions{Mode: m.effectiveMode(p), Limit: memesearch.MaxLimit, Tags: p.Tags}
+	m.log.DebugContext(ctx, "search: scope", "user_id", user, "mode", string(opts.Mode), "tags", opts.Tags)
+	found, err := m.deps.API.Search(ctx, q, opts)
 	if err != nil {
 		m.sendText(ctx, b, msg.Chat.ID, m.searchError(ctx, loc, user, err), nil)
 		return
@@ -156,6 +159,10 @@ func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Updat
 	cq := u.CallbackQuery
 	loc := m.deps.I18n.Localizer(cq.From.LanguageCode)
 	m.log.DebugContext(ctx, "search: callback", "update", "callback_query", "user_id", cq.From.ID, "data", cq.Data)
+	if strings.HasPrefix(cq.Data, settingsPrefix) {
+		m.handleSettingsCallback(ctx, b, cq)
+		return
+	}
 	tok, page, ok := parseMore(cq.Data)
 	if !ok {
 		// Includes srch:s: until "similar" buttons exist.

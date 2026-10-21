@@ -2,12 +2,14 @@ package search
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +22,7 @@ import (
 	"github.com/grbit/meme-search-telegram-bot/internal/fakeclock"
 	"github.com/grbit/meme-search-telegram-bot/mediacache"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
+	"github.com/grbit/meme-search-telegram-bot/store"
 )
 
 // call is one recorded Bot API request.
@@ -110,7 +113,7 @@ func (f *fakeTG) result(c call) any {
 		return out
 	case "sendPhoto":
 		return f.photoMessage()
-	case "sendMessage", "editMessageReplyMarkup":
+	case "sendMessage", "editMessageReplyMarkup", "editMessageText":
 		return map[string]any{"message_id": f.nextID(), "date": 1, "chat": map[string]any{"id": 1, "type": "private"}}
 	default:
 		return true
@@ -307,7 +310,7 @@ func newEnv(t *testing.T, api *fakeAPI, media *fakeMedia, opts ...envOpt) *env {
 	e := &env{tg: newFakeTG(t), api: api, media: media, clock: fakeclock.New(time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC))}
 	cfg := Config{}
 	deps := Deps{
-		API: api, Media: media, I18n: bundle, Now: e.clock.Now,
+		API: api, Media: media, I18n: bundle, Now: e.clock.Now, DB: testDB(t),
 		Log: slog.New(slog.DiscardHandler),
 	}
 	for _, o := range opts {
@@ -377,6 +380,45 @@ func (e *env) waitTimers(t *testing.T, n int) {
 	if !e.clock.WaitForWaiters(n, 5*time.Second) {
 		t.Fatalf("waiters = %d, want %d", e.clock.Waiters(), n)
 	}
+}
+
+func testDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "bot.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+// buttons returns text -> callback data of the keyboard in c, in order.
+func buttons(t *testing.T, c call) [][2]string {
+	t.Helper()
+	raw := c.fields["reply_markup"]
+	if raw == "" {
+		return nil
+	}
+	var kb models.InlineKeyboardMarkup
+	if err := json.Unmarshal([]byte(raw), &kb); err != nil {
+		t.Fatal(err)
+	}
+	var out [][2]string
+	for _, row := range kb.InlineKeyboard {
+		for _, btn := range row {
+			out = append(out, [2]string{btn.Text, btn.CallbackData})
+		}
+	}
+	return out
+}
+
+func (e *env) lastSent(t *testing.T, method string) call {
+	t.Helper()
+	cs := e.tg.byMethod(method)
+	if len(cs) == 0 {
+		t.Fatalf("no %s; methods = %v", method, e.tg.methods())
+	}
+	return cs[len(cs)-1]
 }
 
 func (e *env) process(u *models.Update) {

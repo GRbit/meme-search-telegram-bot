@@ -4,6 +4,8 @@ A Telegram bot for [meme-search](https://github.com/meme-search/meme-search), th
 
 - **Search from Telegram.** Send the bot any text and it answers with an album of matching memes, with a
   "More" button to page through up to 20 results.
+- **Search settings.** `/settings` switches between "Smart" (by meaning) and "Words" (by the words of the query)
+  search and limits it to tags.
 - **Inline mode.** Type `@yourbot cat` in any chat, pick a meme from the grid, and it is sent there.
 - **Save memes.** Allowed users send or forward a picture to the bot, and it lands in your meme-search library.
 - **Limits.** Trusted users search without limits; everyone else gets a small daily quota.
@@ -24,6 +26,7 @@ files into a folder meme-search indexes, so for saving the bot must run on the s
   - [4. Find user ids](#4-find-user-ids)
   - [5. Prepare the library folder](#5-prepare-the-library-folder)
   - [6. Run it](#6-run-it)
+- [Usage](#usage)
 - [Configuration](#configuration)
   - [Limits](#limits)
 - [Troubleshooting](#troubleshooting)
@@ -183,6 +186,17 @@ docker compose up -d
 Relative defaults (`data/bot.db`, `memes/`, `config.yml`) are resolved next to the binary.
 
 Then open the bot in Telegram and send `/start`.
+
+## Usage
+
+- Send any text in the private chat to search; "More" pages through up to 20 results.
+- `/settings` sets your own search mode and tags, kept until you change them:
+  - **Smart** (vector search, the default) finds memes by meaning, also across languages.
+  - **Words** (keyword search) finds memes containing any word of the query; memes matching more words come
+    first.
+  - **Tags** limit search to memes having any of the given tags (at most 10, as meme-search allows). Until
+    meme-search can list its tags, type them separated by commas.
+  - **Reset** returns to the defaults. Changing settings never counts against the daily limit.
 
 ## Configuration
 

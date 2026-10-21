@@ -55,20 +55,22 @@ func TestNewRequiresDeps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	full := Deps{API: &fakeAPI{}, Media: &fakeMedia{}, I18n: bundle}
+	db := testDB(t)
+	full := Deps{API: &fakeAPI{}, Media: &fakeMedia{}, I18n: bundle, DB: db}
 	if _, err := New(Config{}, full); err != nil {
 		t.Fatalf("full deps: %v", err)
 	}
 	for name, d := range map[string]Deps{
-		"api":   {Media: full.Media, I18n: bundle},
-		"media": {API: full.API, I18n: bundle},
-		"i18n":  {API: full.API, Media: full.Media},
+		"api":   {Media: full.Media, I18n: bundle, DB: db},
+		"media": {API: full.API, I18n: bundle, DB: db},
+		"i18n":  {API: full.API, Media: full.Media, DB: db},
+		"db":    {API: full.API, Media: full.Media, I18n: bundle},
 	} {
 		if _, err := New(Config{}, d); err == nil {
 			t.Fatalf("missing %s accepted", name)
 		}
 	}
-	if _, err := New(Config{}, Deps{API: full.API, I18n: bundle}); err == nil || !strings.Contains(err.Error(), "mediacache.NewDirect") {
+	if _, err := New(Config{}, Deps{API: full.API, I18n: bundle, DB: db}); err == nil || !strings.Contains(err.Error(), "mediacache.NewDirect") {
 		t.Fatalf("nil Media error does not point to NewDirect: %v", err)
 	}
 	if _, err := New(Config{ResultsPerPage: 50}, full); err == nil {

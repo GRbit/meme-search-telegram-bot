@@ -83,7 +83,7 @@ func run() error {
 		return err
 	}
 	srch, err := search.New(cfg.Search, search.Deps{
-		API: api, Media: media, I18n: bundle, Log: log.With("module", "search"),
+		API: api, Media: media, I18n: bundle, DB: db, Log: log.With("module", "search"),
 		Middlewares: []bot.Middleware{acc.Middleware(search.Chargeable)},
 	})
 	if err != nil {

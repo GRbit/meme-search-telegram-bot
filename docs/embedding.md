@@ -20,7 +20,7 @@ acc, _ := access.New(ctx, access.Config{TrustedUserIDs: []int64{me}, PublicDaily
 	access.Deps{DB: db, I18n: bundle, Log: log})
 media, _ := mediacache.New(ctx, mediacache.Config{CacheChatID: cacheChat, LibraryDir: "/memes"},
 	mediacache.Deps{DB: db, API: api, Sender: b, Log: log})
-srch, _ := search.New(search.Config{}, search.Deps{API: api, Media: media, I18n: bundle, Log: log,
+srch, _ := search.New(search.Config{}, search.Deps{API: api, Media: media, I18n: bundle, DB: db, Log: log,
 	Middlewares: []bot.Middleware{acc.Middleware(search.Chargeable)}})
 sv, _ := saver.New(saver.Config{Dir: "/memes"}, saver.Deps{Permit: acc, Known: media, I18n: bundle, Log: log})
 

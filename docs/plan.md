@@ -251,3 +251,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   are deleted after the walk. Failures are not inherited (one more attempt is cheap). Not covered: old rows
   deleted by an earlier scan (e.g. files moved out and back later): `mediacache_memes` stores no hash, so its
   file_ids cannot be matched to content safely; those files are uploaded again.
+- Search settings (docs/tasks.md 1.1) live in the search module's own table `search_prefs`; `search.Deps.DB` is
+  therefore required now. A settings row equal to the defaults is deleted, so "Reset" leaves no trace. The tag
+  list a user types after "Set tags" is caught by a handler registered before text search and without the access
+  middleware, so it is neither a search nor charged; the waiting state is in memory (10 min) and a restart just
+  turns that text into a search.
