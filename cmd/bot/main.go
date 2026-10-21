@@ -33,14 +33,19 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := run(ctx, os.Environ(), exeDir())
+	cancel()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	cfg, err := config.Load(os.Environ(), exeDir())
+// run starts the bot and blocks until ctx ends. botOpts exist for the startup
+// test, which points the bot at a fake Bot API.
+func run(ctx context.Context, environ []string, baseDir string, botOpts ...bot.Option) error {
+	cfg, err := config.Load(environ, baseDir)
 	if err != nil {
 		return err
 	}
@@ -48,9 +53,6 @@ func run() error {
 	for _, line := range strings.Split(cfg.Summary(), "\n") {
 		log.Info("config", "setting", line)
 	}
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 
 	db, err := store.Open(ctx, cfg.DBPath, log)
 	if err != nil {
@@ -66,10 +68,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	b, err := bot.New(cfg.TelegramToken,
+	b, err := bot.New(cfg.TelegramToken, append([]bot.Option{
 		bot.WithDefaultHandler(unhandled(log)),
 		bot.WithErrorsHandler(func(err error) { log.Warn("telegram", "err", err) }),
-	)
+	}, botOpts...)...)
 	if err != nil {
 		return fmt.Errorf("telegram: %w", err)
 	}
