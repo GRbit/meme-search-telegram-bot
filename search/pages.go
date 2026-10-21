@@ -14,7 +14,7 @@ import (
 
 const (
 	morePrefix    = CallbackPrefix + "m:"
-	similarPrefix = CallbackPrefix + "s:" // reserved for "similar" buttons (phase 4)
+	similarPrefix = CallbackPrefix + "s:"
 	// everywherePrefix reruns a session's query without tags and folders.
 	everywherePrefix = CallbackPrefix + "e:"
 
@@ -126,6 +126,28 @@ func parseMore(data string) (tok string, page int, ok bool) {
 		return "", 0, false
 	}
 	return tok, page, true
+}
+
+// similarData points at one meme of a session by its index in the results.
+func similarData(tok string, idx int) string {
+	return similarPrefix + tok + ":" + strconv.Itoa(idx)
+}
+
+// parseSimilar parses "srch:s:<token>:<index>".
+func parseSimilar(data string) (tok string, idx int, ok bool) {
+	rest, ok := strings.CutPrefix(data, similarPrefix)
+	if !ok {
+		return "", 0, false
+	}
+	tok, num, ok := strings.Cut(rest, ":")
+	if !ok || tok == "" {
+		return "", 0, false
+	}
+	idx, err := strconv.Atoi(num)
+	if err != nil || idx < 0 {
+		return "", 0, false
+	}
+	return tok, idx, true
 }
 
 // pageCount is the number of pages n results fill.

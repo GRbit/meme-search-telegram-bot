@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -122,18 +123,23 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 			map[string]any{"Tag": longestTag(o.tags), "Len": memesearch.MaxTagLen}), nil)
 		return
 	}
-	m.runSearch(ctx, b, loc, user, msg.Chat.ID, q, m.privateScope(m.loadPrefs(ctx, user), o))
+	m.runSearch(ctx, b, loc, user, msg.Chat.ID, q, m.privateScope(m.loadPrefs(ctx, user), o), 0)
 }
 
 // runSearch searches q within sc and sends page 1 to chat; text searches and
 // the buttons that rerun a search all end here.
-func (m *Module) runSearch(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64, q string, sc scope) {
+// exclude (a meme id, or 0) is dropped from the results: "Similar" must not
+// show the meme it started from.
+func (m *Module) runSearch(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64, q string, sc scope, exclude int64) {
 	m.log.DebugContext(ctx, "search: scope", "user_id", user, "mode", string(sc.mode), "tags", sc.tags,
 		"folders_not_applied", sc.folders)
 	found, err := m.deps.API.Search(ctx, q, sc.options(memesearch.MaxLimit))
 	if err != nil {
 		m.sendText(ctx, b, chat, m.searchError(ctx, loc, user, err), nil)
 		return
+	}
+	if exclude != 0 {
+		found = slices.DeleteFunc(found, func(mm memesearch.Meme) bool { return mm.ID == exclude })
 	}
 	m.log.DebugContext(ctx, "search: results", "user_id", user, "count", len(found))
 	s := &session{owner: user, chat: chat, memes: found, created: m.now(), query: q, scope: sc}
@@ -175,10 +181,6 @@ func (m *Module) sendPage(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, 
 		m.sendText(ctx, b, s.chat, loc.T("search.error", nil), nil)
 		return
 	}
-	var rows [][]models.InlineKeyboardButton
-	if page < pages {
-		rows = append(rows, []models.InlineKeyboardButton{{Text: loc.T("search.more", nil), CallbackData: moreData(tok, page+1)}})
-	}
 	lines := []string{loc.T("search.page", map[string]any{"Page": page, "Pages": pages})}
 	if page == 1 {
 		if len(s.scope.folders) > 0 {
@@ -187,15 +189,86 @@ func (m *Module) sendPage(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, 
 		if !m.isDefaultScope(s.scope) {
 			lines = append([]string{loc.T("search.scope_line", map[string]any{"Scope": m.describeScope(loc, s.scope)})}, lines...)
 		}
-		if s.scope.filtered() {
-			rows = append(rows, m.everywhereKeyboard(loc, tok).InlineKeyboard...)
-		}
 	}
 	var kb models.ReplyMarkup
-	if len(rows) > 0 {
+	if rows := m.pageKeyboard(loc, s, tok, page, true); len(rows) > 0 {
 		kb = &models.InlineKeyboardMarkup{InlineKeyboard: rows}
 	}
 	m.sendText(ctx, b, s.chat, strings.Join(lines, "\n"), kb)
+}
+
+// similarPerRow keeps "Similar N" buttons readable on a phone.
+const similarPerRow = 5
+
+// pageKeyboard builds a control message's buttons: "Similar N" for every
+// described meme of the page (N is its position in the album), "More" while
+// pages remain, and "Search everywhere" on page 1 of a filtered search.
+func (m *Module) pageKeyboard(loc *i18n.Localizer, s *session, tok string, page int, withMore bool) [][]models.InlineKeyboardButton {
+	per := m.cfg.ResultsPerPage
+	var rows [][]models.InlineKeyboardButton
+	var row []models.InlineKeyboardButton
+	for i, mm := range pageSlice(s.memes, page, per) {
+		// Without a description there is nothing to search by.
+		if strings.TrimSpace(mm.Description) == "" {
+			continue
+		}
+		row = append(row, models.InlineKeyboardButton{
+			Text: loc.T("search.similar", map[string]any{"N": i + 1}), CallbackData: similarData(tok, (page-1)*per+i),
+		})
+		if len(row) == similarPerRow {
+			rows, row = append(rows, row), nil
+		}
+	}
+	if len(row) > 0 {
+		rows = append(rows, row)
+	}
+	if withMore && page < pageCount(len(s.memes), per) {
+		rows = append(rows, []models.InlineKeyboardButton{{Text: loc.T("search.more", nil), CallbackData: moreData(tok, page+1)}})
+	}
+	if page == 1 && s.scope.filtered() {
+		rows = append(rows, m.everywhereKeyboard(loc, tok).InlineKeyboard...)
+	}
+	return rows
+}
+
+// handleSimilar searches by the description of one meme of a session, within
+// the session's tags; vector mode, because a description is prose, not keywords.
+func (m *Module) handleSimilar(ctx context.Context, b *bot.Bot, cq *models.CallbackQuery) {
+	loc := m.deps.I18n.Localizer(cq.From.LanguageCode)
+	tok, idx, ok := parseSimilar(cq.Data)
+	var s *session
+	if ok {
+		s = m.pages.get(tok, m.now())
+	}
+	switch {
+	case s == nil || idx >= len(s.memes):
+		m.log.DebugContext(ctx, "search: similar on expired session", "user_id", cq.From.ID, "data", cq.Data)
+		m.answerCallback(ctx, b, cq.ID, loc.T("search.expired", nil))
+		return
+	case s.owner != cq.From.ID:
+		m.log.DebugContext(ctx, "search: foreign similar refused", "user_id", cq.From.ID, "owner", s.owner)
+		m.answerCallback(ctx, b, cq.ID, loc.T("search.not_owner", nil))
+		return
+	}
+	src := s.memes[idx]
+	q := truncateRunes(strings.TrimSpace(src.Description), memesearch.MaxQueryLen)
+	if q == "" {
+		m.log.DebugContext(ctx, "search: similar without description", "user_id", cq.From.ID, "meme_id", src.ID)
+		m.answerCallback(ctx, b, cq.ID, loc.T("search.no_description", nil))
+		return
+	}
+	m.answerCallback(ctx, b, cq.ID, "")
+	m.log.DebugContext(ctx, "search: similar", "user_id", cq.From.ID, "meme_id", src.ID, "query_len", utf8.RuneCountInString(q))
+	sc := s.scope
+	sc.mode = memesearch.ModeVector
+	m.runSearch(ctx, b, loc, cq.From.ID, s.chat, q, sc, src.ID)
+}
+
+func truncateRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
 }
 
 func (m *Module) everywhereKeyboard(loc *i18n.Localizer, tok string) *models.InlineKeyboardMarkup {
@@ -221,7 +294,7 @@ func (m *Module) handleEverywhere(ctx context.Context, b *bot.Bot, cq *models.Ca
 	}
 	m.answerCallback(ctx, b, cq.ID, "")
 	m.log.DebugContext(ctx, "search: search everywhere", "user_id", cq.From.ID, "query", s.query)
-	m.runSearch(ctx, b, loc, cq.From.ID, s.chat, s.query, scope{mode: s.scope.mode})
+	m.runSearch(ctx, b, loc, cq.From.ID, s.chat, s.query, scope{mode: s.scope.mode}, 0)
 }
 
 func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Update) {
@@ -235,10 +308,12 @@ func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Updat
 	case strings.HasPrefix(cq.Data, everywherePrefix):
 		m.handleEverywhere(ctx, b, cq)
 		return
+	case strings.HasPrefix(cq.Data, similarPrefix):
+		m.handleSimilar(ctx, b, cq)
+		return
 	}
 	tok, page, ok := parseMore(cq.Data)
 	if !ok {
-		// Includes srch:s: until "similar" buttons exist.
 		m.log.DebugContext(ctx, "search: callback ignored", "user_id", cq.From.ID, "data", cq.Data)
 		m.answerCallback(ctx, b, cq.ID, "")
 		return
@@ -256,9 +331,14 @@ func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Updat
 	}
 	m.answerCallback(ctx, b, cq.ID, "")
 	if prev := cq.Message.Message; prev != nil {
+		// Only "More" goes: the old page keeps its Similar buttons.
+		rows := m.pageKeyboard(loc, s, tok, page-1, false)
+		if rows == nil {
+			rows = [][]models.InlineKeyboardButton{}
+		}
 		_, err := b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
 			ChatID: prev.Chat.ID, MessageID: prev.ID,
-			ReplyMarkup: &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}},
+			ReplyMarkup: &models.InlineKeyboardMarkup{InlineKeyboard: rows},
 		})
 		if err != nil {
 			m.log.WarnContext(ctx, "search: remove More button failed", "user_id", cq.From.ID, "err", err)

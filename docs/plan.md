@@ -225,7 +225,6 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   means off, like `InlineChargeWindow`; the 1s default lives in the config table.
 - The saver accepts jpg, png and webp only (the formats meme-search's uploader takes); a second "already saved"
   reply covers duplicates inside the sender's own folder.
-- `srch:s:` is reserved but not charged until phase 4 implements "similar".
 - The Dockerfile declares only `VOLUME /data`: declaring `/memes` would silently create an anonymous volume when a
   user forgets the bind mount, and saves would vanish with the container.
 - Extra setting `MEME_SEARCH_TIMEOUT` (default 30s).
@@ -267,3 +266,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
 - Inline scope (tasks 1.4) is resolved per dimension (tags, folders) from layers: query filters, the user's saved
   settings, then `INLINE_GROUP_SCOPE` when `chat_type` is group or supergroup. Inline keeps `SEARCH_MODE`, ignoring
   the user's saved mode. `INLINE_GROUP_SCOPE` uses the query filter syntax and is validated to hold filters only.
+- "Similar" (tasks 1.6, phase 4): buttons "Similar N" sit in the control message of each page, one per meme that
+  has a description (N is its position in the album); "More" now removes only itself so older pages keep them.
+  A press searches by the description (first 200 characters) in vector mode within the session's tags and drops
+  the source meme from the results. `srch:s:` and `srch:e:` are charged by `Chargeable`, which cannot see sessions:
+  a press on an expired session is charged although nothing is searched (rare, 1h TTL).

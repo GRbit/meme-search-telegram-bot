@@ -224,10 +224,9 @@ func (m *Module) Register(b *bot.Bot) {
 }
 
 // Chargeable reports whether an update runs a new search and therefore counts
-// against access limits: text searches, inline queries and the "Search
-// everywhere" rerun, but not paging or settings. Hosts pass it to
-// access.Access.Middleware. "similar" callbacks will count once they run a
-// search; until then a press is a no-op and must not burn quota.
+// against access limits: text searches, inline queries, "Similar" and the
+// "Search everywhere" rerun, but not paging or settings. Hosts pass it to
+// access.Access.Middleware.
 //
 // It mirrors the handlers' own checks, so blank or over-long queries, which
 // never reach the API, are not charged.
@@ -241,8 +240,9 @@ func Chargeable(u *models.Update) bool {
 		o := parseOverrides(u.InlineQuery.Query)
 		_, ok := searchQuery(o.query)
 		return ok && tagProblemOf(o.tags) == tagsOK
-	case u.CallbackQuery != nil && strings.HasPrefix(u.CallbackQuery.Data, everywherePrefix):
-		return true
+	case u.CallbackQuery != nil:
+		d := u.CallbackQuery.Data
+		return strings.HasPrefix(d, everywherePrefix) || strings.HasPrefix(d, similarPrefix)
 	}
 	return false
 }

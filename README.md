@@ -206,6 +206,8 @@ Then open the bot in Telegram and send `/start`.
 - When a search is not the default one, the message under the results says what applied (e.g. "Search: Words,
   tags: cat"); with tags there is a "Search everywhere" button that repeats the search without them (it counts as
   a search). An empty result with tags says so and offers the same button.
+- "Similar N" under the results searches for memes similar to the N-th meme of that album (by its description,
+  within the same tags); it counts as a search. Memes not described yet have no such button.
 - Inline (`@yourbot query` in any chat) always uses Smart search. Its tags come, most specific first, from
   `#tag` in the query, the user's `/settings`, and for queries typed in groups the `INLINE_GROUP_SCOPE` default.
 
