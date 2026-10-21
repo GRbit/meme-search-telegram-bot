@@ -16,6 +16,7 @@ search:
   mode: vector             # SEARCH_MODE: vector or keyword
   inline_results: 3        # INLINE_RESULTS, memes per inline query, 1-20
   inline_debounce: 1s      # INLINE_DEBOUNCE, wait for the user to stop typing, max 5s; 0 disables
+  inline_group_scope: ""   # INLINE_GROUP_SCOPE, default filters for inline in groups, e.g. "#reaction #work"
 
 cache:
   # chat_id:              # CACHE_CHAT_ID, private channel id like -1001234567890; empty = inline off

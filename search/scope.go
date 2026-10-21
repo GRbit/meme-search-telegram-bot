@@ -3,6 +3,8 @@ package search
 import (
 	"strings"
 
+	"github.com/go-telegram/bot/models"
+
 	"github.com/grbit/meme-search-telegram-bot/i18n"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 )
@@ -57,4 +59,36 @@ func (m *Module) describeScope(loc *i18n.Localizer, sc scope) string {
 		parts = append(parts, loc.T("search.scope_folders", map[string]any{"Folders": strings.Join(sc.folders, ", ")}))
 	}
 	return strings.Join(parts, ", ")
+}
+
+func isGroupChatType(t string) bool {
+	return t == string(models.ChatTypeGroup) || t == string(models.ChatTypeSupergroup)
+}
+
+// inlineScope resolves an inline query's scope per dimension, most specific
+// first: the query's own filters, the user's settings, then the group
+// default for queries typed in groups. The mode stays Config.Mode: inline
+// answers are a quick grid, and the settings mode is for the private chat.
+func (m *Module) inlineScope(p prefs, o overrides, chatType string) scope {
+	layers := []overrides{o, {tags: p.Tags, folders: p.Folders}}
+	if isGroupChatType(chatType) {
+		layers = append(layers, m.groupDefault)
+	}
+	sc := scope{mode: m.cfg.Mode}
+	for _, l := range layers {
+		if len(l.tags) > 0 {
+			sc.tags = l.tags
+			break
+		}
+	}
+	for _, l := range layers {
+		if len(l.folders) > 0 {
+			sc.folders = l.folders
+			break
+		}
+		if l.allFolders {
+			break
+		}
+	}
+	return sc
 }

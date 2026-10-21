@@ -270,9 +270,11 @@ func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Updat
 func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update) {
 	iq := u.InlineQuery
 	user := iq.From.ID
-	q, ok := searchQuery(iq.Query)
+	o := parseOverrides(iq.Query)
+	q, ok := searchQuery(o.query)
+	ok = ok && tagProblemOf(o.tags) == tagsOK
 	m.log.DebugContext(ctx, "search: inline", "update", "inline_query", "user_id", user, "query", q,
-		"query_len", utf8.RuneCountInString(q))
+		"query_len", utf8.RuneCountInString(q), "chat_type", iq.ChatType, "tags", o.tags, "folders", o.folders)
 	// Telegram sends a query per keystroke; only the one the user stopped at
 	// is worth an API call. Access already charged it in the middleware, at
 	// arrival, exactly as without the debounce.
@@ -286,7 +288,9 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 	results := []models.InlineQueryResult{}
 	var misses []memesearch.Meme
 	if ok {
-		found, err := m.deps.API.Search(ctx, q, memesearch.SearchOptions{Mode: m.cfg.Mode, Limit: m.cfg.InlineResults})
+		sc := m.inlineScope(m.loadPrefs(ctx, user), o, iq.ChatType)
+		m.log.DebugContext(ctx, "search: inline scope", "user_id", user, "tags", sc.tags, "folders_not_applied", sc.folders)
+		found, err := m.deps.API.Search(ctx, q, sc.options(m.cfg.InlineResults))
 		if err != nil {
 			// Inline answers have no room for an explanation; an empty grid it is.
 			m.log.WarnContext(ctx, "search: inline search failed", "user_id", user, "err", err)

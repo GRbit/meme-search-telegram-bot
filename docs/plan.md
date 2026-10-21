@@ -264,3 +264,6 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   plus buttons reliably). "Search everywhere" (`srch:e:<token>`) keeps the mode and drops tags and folders; it is
   offered only with tags, since folders are not applied yet and mode is not a filter. It is charged like a search.
   An empty tagged result keeps a session only for that button.
+- Inline scope (tasks 1.4) is resolved per dimension (tags, folders) from layers: query filters, the user's saved
+  settings, then `INLINE_GROUP_SCOPE` when `chat_type` is group or supergroup. Inline keeps `SEARCH_MODE`, ignoring
+  the user's saved mode. `INLINE_GROUP_SCOPE` uses the query filter syntax and is validated to hold filters only.

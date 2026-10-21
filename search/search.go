@@ -50,6 +50,10 @@ type Config struct {
 	// means 3. Every miss among them is queued for upload, so a small number keeps the queue short.
 	InlineResults  int
 	InlineDebounce time.Duration
+	// InlineGroupScope is the default scope of inline queries sent from groups,
+	// written like query filters: "#tag #other dir:folder". It applies only
+	// when neither the query nor the user's settings name tags (or folders).
+	InlineGroupScope string
 }
 
 // Validate reports every invalid field as a *configerr.Field.
@@ -68,6 +72,13 @@ func (c Config) Validate() error {
 	}
 	if c.InlineDebounce < 0 || c.InlineDebounce > maxInlineDebounce {
 		errs = append(errs, &configerr.Field{Name: "InlineDebounce", Reason: fmt.Sprintf("must be 0..%s (0 disables it)", maxInlineDebounce)})
+	}
+	if o := parseOverrides(c.InlineGroupScope); o.query != "" {
+		errs = append(errs, &configerr.Field{Name: "InlineGroupScope",
+			Reason: fmt.Sprintf("must hold only #tag and dir:folder filters, found %q", o.query)})
+	} else if tagProblemOf(o.tags) != tagsOK {
+		errs = append(errs, &configerr.Field{Name: "InlineGroupScope",
+			Reason: fmt.Sprintf("at most %d tags of at most %d characters", memesearch.MaxTags, memesearch.MaxTagLen)})
 	}
 	if c.InlineResults < 0 || c.InlineResults > memesearch.MaxLimit {
 		errs = append(errs, &configerr.Field{Name: "InlineResults", Reason: fmt.Sprintf("must be 1..%d (0 means %d)", memesearch.MaxLimit, defaultInlineResults)})
@@ -129,6 +140,8 @@ type Module struct {
 	after  func(time.Duration) (<-chan time.Time, func())
 	inline latestQueries
 	inputs pendingInputs
+	// groupDefault is Config.InlineGroupScope parsed once.
+	groupDefault overrides
 }
 
 var _ module.Module = (*Module)(nil)
@@ -183,6 +196,8 @@ func New(cfg Config, deps Deps) (*Module, error) {
 		now:   now,
 		pages: newPageStore(cfg.PageTTL, maxSessions),
 		after: realAfter,
+
+		groupDefault: parseOverrides(cfg.InlineGroupScope),
 	}, nil
 }
 
@@ -205,7 +220,7 @@ func (m *Module) Register(b *bot.Bot) {
 	}
 	m.log.Info("search module registered", "inline", inline, "results_per_page", m.cfg.ResultsPerPage,
 		"mode", string(m.cfg.Mode), "page_ttl", m.cfg.PageTTL, "inline_results", m.cfg.InlineResults,
-		"inline_debounce", m.cfg.InlineDebounce)
+		"inline_debounce", m.cfg.InlineDebounce, "inline_group_scope", m.cfg.InlineGroupScope)
 }
 
 // Chargeable reports whether an update runs a new search and therefore counts
@@ -223,8 +238,9 @@ func Chargeable(u *models.Update) bool {
 		_, ok := searchQuery(o.query)
 		return ok && tagProblemOf(o.tags) == tagsOK
 	case isInline(u):
-		_, ok := searchQuery(u.InlineQuery.Query)
-		return ok
+		o := parseOverrides(u.InlineQuery.Query)
+		_, ok := searchQuery(o.query)
+		return ok && tagProblemOf(o.tags) == tagsOK
 	case u.CallbackQuery != nil && strings.HasPrefix(u.CallbackQuery.Data, everywherePrefix):
 		return true
 	}
