@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -172,6 +173,19 @@ func TestSearchRequest(t *testing.T) {
 	}
 }
 
+// Each tag is its own repeated parameter: commas are part of a tag, not separators.
+func TestSearchSendsTags(t *testing.T) {
+	body := `{"data":[],"meta":{"query":"x","mode":"vector","tags":["a,b","кот"],"limit":5,"count":0}}`
+	srv, last, _ := serve(t, http.StatusOK, body, nil)
+	tags := []string{"a,b", "кот"}
+	if _, err := newTestClient(t, srv.URL, nil).Search(t.Context(), "x", SearchOptions{Limit: 5, Tags: tags}); err != nil {
+		t.Fatal(err)
+	}
+	if got := last.Load().URL.Query()["tag"]; !slices.Equal(got, tags) {
+		t.Fatalf("tag params = %q, want %q", got, tags)
+	}
+}
+
 func TestSearchOmitsEmptyMode(t *testing.T) {
 	body := `{"data":[],"meta":{"query":"x","mode":"keyword","tags":[],"limit":5,"count":0}}`
 	srv, last, _ := serve(t, http.StatusOK, body, nil)
@@ -220,6 +234,9 @@ func TestSearchLocalValidation(t *testing.T) {
 		{"limit negative", "x", SearchOptions{Limit: -1}},
 		{"limit too big", "x", SearchOptions{Limit: MaxLimit + 1}},
 		{"bad mode", "x", SearchOptions{Mode: "hybrid", Limit: 5}},
+		{"too many tags", "x", SearchOptions{Limit: 5, Tags: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"}}},
+		{"tag too long", "x", SearchOptions{Limit: 5, Tags: []string{strings.Repeat("я", MaxTagLen+1)}}},
+		{"empty tag", "x", SearchOptions{Limit: 5, Tags: []string{" "}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := c.Search(t.Context(), tc.query, tc.opts)

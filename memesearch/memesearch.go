@@ -27,6 +27,8 @@ import (
 const (
 	MaxQueryLen = 200
 	MaxLimit    = 20
+	MaxTags     = 10
+	MaxTagLen   = 20
 )
 
 // Mode selects the search algorithm.
@@ -54,6 +56,9 @@ type Meme struct {
 type SearchOptions struct {
 	Mode  Mode
 	Limit int // 1..MaxLimit
+	// Tags restrict results to memes with any of them (at most MaxTags, each at
+	// most MaxTagLen characters); the server filters before ranking.
+	Tags []string
 }
 
 // Content is the original media of one meme.
@@ -227,6 +232,9 @@ func (c *HTTPClient) Search(ctx context.Context, query string, opts SearchOption
 		params.Set("mode", string(opts.Mode))
 	}
 	params.Set("limit", strconv.Itoa(opts.Limit))
+	for _, t := range opts.Tags {
+		params.Add("tag", t)
+	}
 
 	start := time.Now()
 	const path = "/api/v1/search"
@@ -237,7 +245,7 @@ func (c *HTTPClient) Search(ctx context.Context, query string, opts SearchOption
 	}
 	if err != nil {
 		c.log.DebugContext(ctx, "memesearch call failed", "method", http.MethodGet, "path", path,
-			"query", query, "mode", string(opts.Mode), "limit", opts.Limit,
+			"query", query, "mode", string(opts.Mode), "limit", opts.Limit, "tags", opts.Tags,
 			"status", status, "duration", time.Since(start), "err", err)
 		return nil, err
 	}
@@ -246,7 +254,7 @@ func (c *HTTPClient) Search(ctx context.Context, query string, opts SearchOption
 		memes[i] = w.meme()
 	}
 	c.log.DebugContext(ctx, "memesearch call", "method", http.MethodGet, "path", path,
-		"query", query, "mode", string(opts.Mode), "limit", opts.Limit,
+		"query", query, "mode", string(opts.Mode), "limit", opts.Limit, "tags", opts.Tags,
 		"status", status, "duration", time.Since(start), "count", len(memes))
 	return memes, nil
 }
@@ -407,6 +415,14 @@ func validateSearch(query string, opts SearchOptions) error {
 	case "", ModeVector, ModeKeyword:
 	default:
 		return fmt.Errorf("%w: unknown mode %q", ErrInvalidRequest, opts.Mode)
+	}
+	if len(opts.Tags) > MaxTags {
+		return fmt.Errorf("%w: %d tags, limit %d", ErrInvalidRequest, len(opts.Tags), MaxTags)
+	}
+	for _, t := range opts.Tags {
+		if strings.TrimSpace(t) == "" || utf8.RuneCountInString(t) > MaxTagLen {
+			return fmt.Errorf("%w: tag %q is empty or longer than %d characters", ErrInvalidRequest, t, MaxTagLen)
+		}
 	}
 	return nil
 }
