@@ -102,6 +102,10 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 	q, ok := searchQuery(o.query)
 	m.log.DebugContext(ctx, "search: text", "update", "message", "user_id", user, "query", q,
 		"query_len", utf8.RuneCountInString(q), "tags", o.tags, "folders", o.folders, "all_folders", o.allFolders)
+	if o.group != "" {
+		// Group codes come from a group's pinned inline button; a private search has no group.
+		m.log.DebugContext(ctx, "search: group code in private search ignored", "user_id", user, "code", o.group)
+	}
 	switch {
 	case q == "":
 		m.log.DebugContext(ctx, "search: filters without a query", "user_id", user)
@@ -368,7 +372,7 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 	results := []models.InlineQueryResult{}
 	var misses []memesearch.Meme
 	if ok {
-		sc := m.inlineScope(m.loadPrefs(ctx, user), o, iq.ChatType)
+		sc := m.inlineScope(m.loadPrefs(ctx, user), o, m.inlineGroup(ctx, user, o.group), iq.ChatType)
 		m.log.DebugContext(ctx, "search: inline scope", "user_id", user, "tags", sc.tags, "folders_not_applied", sc.folders)
 		found, err := m.deps.API.Search(ctx, q, sc.options(m.cfg.InlineResults))
 		if err != nil {

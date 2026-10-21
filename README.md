@@ -27,6 +27,7 @@ files into a folder meme-search indexes, so for saving the bot must run on the s
   - [5. Prepare the library folder](#5-prepare-the-library-folder)
   - [6. Run it](#6-run-it)
 - [Usage](#usage)
+  - [Group scope](#group-scope)
 - [Configuration](#configuration)
   - [Limits](#limits)
 - [Troubleshooting](#troubleshooting)
@@ -209,7 +210,22 @@ Then open the bot in Telegram and send `/start`.
 - "Similar N" under the results searches for memes similar to the N-th meme of that album (by its description,
   within the same tags); it counts as a search. Memes not described yet have no such button.
 - Inline (`@yourbot query` in any chat) always uses Smart search. Its tags come, most specific first, from
-  `#tag` in the query, the user's `/settings`, and for queries typed in groups the `INLINE_GROUP_SCOPE` default.
+  `#tag` in the query, a group's scope button (below), the user's `/settings`, and for queries typed in groups the
+  `INLINE_GROUP_SCOPE` default.
+
+### Group scope
+
+Telegram does not tell a bot which group an inline query is typed in, so a group's meme scope travels in the
+query. Add the bot to the group (no admin rights and no privacy mode change needed), then a group admin sends:
+
+- `/memescope@yourbot set #reaction #work` (filters only: `#tag`, `dir:folder`). The bot answers with a message
+  whose "Search memes" button types `@yourbot g:<code> ` into the input field; pin that message.
+- `/memescope@yourbot` shows the scope (anyone), `reset` searches all memes but keeps the button working,
+  `button` posts the button again, `off` removes the scope.
+
+Queries with that code search within the group's tags; typing `@yourbot` by hand uses your own settings. The
+code is not a secret: anyone typing it only changes their own results. Limits are unchanged: whoever types the
+query pays for it. Removing the bot from the group deletes its scope.
 
 ## Configuration
 

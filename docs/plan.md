@@ -271,3 +271,10 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   A press searches by the description (first 200 characters) in vector mode within the session's tags and drops
   the source meme from the results. `srch:s:` and `srch:e:` are charged by `Chargeable`, which cannot see sessions:
   a press on an expired session is charged although nothing is searched (rare, 1h TTL).
+- Group scope (tasks 1.5): table `search_group_scopes` (chat id, 6-char code from an alphabet without look-alikes,
+  tags, folders, set_by, updated_at). `set` and `reset` keep the code so a pinned button never breaks; `off`
+  deletes the row and old buttons fall back to personal settings. Admin check: `sender_chat` equal to the group
+  (anonymous admins) or a `getChatAdministrators` match; the anonymous-admin placeholder user alone is not
+  trusted. `/memescope@otherbot` is ignored. `g:<code>` is parsed anywhere in the query (first one wins) and
+  ignored in private searches. `my_chat_member` left/kicked deletes the row; a group upgraded to a supergroup
+  keeps working through its code although its chat id changed (the stale row is dropped only by a later "off").

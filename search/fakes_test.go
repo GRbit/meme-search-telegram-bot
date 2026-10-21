@@ -41,6 +41,8 @@ type fakeTG struct {
 	seq   int
 	// fail decides whether a call is answered with a 400 error.
 	fail func(c call) bool
+	// admins answer getChatAdministrators; the first one is the owner.
+	admins []int64
 }
 
 func newFakeTG(t *testing.T) *fakeTG {
@@ -113,6 +115,18 @@ func (f *fakeTG) result(c call) any {
 		return out
 	case "sendPhoto":
 		return f.photoMessage()
+	case "getChatAdministrators":
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		out := []map[string]any{}
+		for i, id := range f.admins {
+			status := "administrator"
+			if i == 0 {
+				status = "creator"
+			}
+			out = append(out, map[string]any{"status": status, "user": map[string]any{"id": id, "is_bot": false, "first_name": "a"}})
+		}
+		return out
 	case "sendMessage", "editMessageReplyMarkup", "editMessageText":
 		return map[string]any{"message_id": f.nextID(), "date": 1, "chat": map[string]any{"id": 1, "type": "private"}}
 	default:

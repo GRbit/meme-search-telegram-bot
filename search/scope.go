@@ -66,11 +66,15 @@ func isGroupChatType(t string) bool {
 }
 
 // inlineScope resolves an inline query's scope per dimension, most specific
-// first: the query's own filters, the user's settings, then the group
-// default for queries typed in groups. The mode stays Config.Mode: inline
+// first: the query's own filters, the group code's scope, the user's
+// settings, then the group default for queries typed in groups. The mode stays Config.Mode: inline
 // answers are a quick grid, and the settings mode is for the private chat.
-func (m *Module) inlineScope(p prefs, o overrides, chatType string) scope {
-	layers := []overrides{o, {tags: p.Tags, folders: p.Folders}}
+func (m *Module) inlineScope(p prefs, o overrides, g *groupScope, chatType string) scope {
+	layers := []overrides{o}
+	if g != nil {
+		layers = append(layers, overrides{tags: g.tags, folders: g.folders})
+	}
+	layers = append(layers, overrides{tags: p.Tags, folders: p.Folders})
 	if isGroupChatType(chatType) {
 		layers = append(layers, m.groupDefault)
 	}

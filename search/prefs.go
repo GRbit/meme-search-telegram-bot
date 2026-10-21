@@ -22,6 +22,14 @@ var migrations = []string{
 		folders TEXT NOT NULL DEFAULT '[]',
 		updated_at INTEGER NOT NULL
 	)`,
+	`CREATE TABLE search_group_scopes (
+		chat_id INTEGER PRIMARY KEY,
+		code TEXT NOT NULL UNIQUE,
+		tags TEXT NOT NULL DEFAULT '[]',
+		folders TEXT NOT NULL DEFAULT '[]',
+		set_by INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
+	)`,
 }
 
 // prefs are one user's saved search settings. Zero values mean the host's
