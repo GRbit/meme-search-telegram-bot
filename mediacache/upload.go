@@ -30,14 +30,14 @@ const memeRetryAfter = 24 * time.Hour
 // them, so API downloads are bounded by the upload rate (they share the
 // per-token budget with user searches) and a long queue holds no images.
 type job struct {
-	memeID   int64           // 0 for warmup
+	memeID   int64           // 0 for library warmup
 	meme     memesearch.Meme // realtime: downloaded from the API unless relPath is readable
 	relPath  string          // library file the bytes come from or belong to, if any
 	caption  string
 	filename string
-	date     string      // warmup: nameDate of the file
+	date     string      // warmup: nameDate of the file name
 	data     []byte      // set once downloaded, kept for a retry after 429
-	done     chan result // nil for warmup
+	done     chan result // nil for warmup (library or API)
 }
 
 type result struct {
@@ -46,10 +46,15 @@ type result struct {
 }
 
 func (j *job) key() string {
-	if j.done == nil {
-		return "lib:" + j.relPath
+	switch {
+	case j.done != nil:
+		return memeKey(j.memeID)
+	case j.memeID != 0:
+		// Not memeKey: a realtime job for the same meme must not be
+		// deduplicated into a warmup job nobody waits on.
+		return apiJobKey(j.memeID)
 	}
-	return memeKey(j.memeID)
+	return "lib:" + j.relPath
 }
 
 // memeKey names a realtime job in the queue so it can be moved between
@@ -181,7 +186,7 @@ func (c *Cache) resolveMeme(ctx context.Context, m memesearch.Meme) (string, err
 		c.log.DebugContext(ctx, "resolve: meme rejected recently, not retrying", "meme_id", m.ID, "failed_at", mr.failedAt)
 		return "", fmt.Errorf("%w: meme %d", ErrRejected, m.ID)
 	}
-	rows, err := c.libraryByName(ctx, m.Filename)
+	rows, err := c.libraryFor(ctx, m)
 	if err != nil {
 		return "", err
 	}
@@ -349,13 +354,19 @@ func (c *Cache) jobData(ctx context.Context, j *job) (data []byte, ok bool) {
 			"rel_path", j.relPath, "err", err)
 		j.relPath, j.caption, j.filename = "", fmt.Sprintf("meme %d", j.memeID), photoName(j.meme)
 	}
+	if j.done == nil && c.settledMeme(ctx, j.memeID) {
+		return nil, false
+	}
 	ct, err := fetchPhoto(ctx, c.api, c.log, j.meme)
 	if err != nil {
+		if j.done == nil {
+			c.apiWarmupFailed(ctx, j.memeID, err)
+		}
 		j.finish(result{err: err})
 		return nil, false
 	}
 	j.data = ct.Data
-	rows, err := c.libraryByName(ctx, j.meme.Filename)
+	rows, err := c.libraryFor(ctx, j.meme)
 	if err != nil {
 		c.log.WarnContext(ctx, "upload: library lookup", "meme_id", j.memeID, "err", err)
 	}
@@ -396,6 +407,35 @@ func (c *Cache) settledRow(ctx context.Context, j *job) bool {
 		return true
 	}
 	return false
+}
+
+// settledMeme reports whether an API warmup job became unnecessary since it
+// was queued: an inline miss or an album uploaded the meme, or it failed.
+func (c *Cache) settledMeme(ctx context.Context, id int64) bool {
+	mr, ok, err := c.memeRow(ctx, id)
+	if err != nil {
+		c.log.WarnContext(ctx, "upload: read meme row", "meme_id", id, "err", err)
+		return false
+	}
+	if ok && (mr.fileID != "" || !mr.failedAt.IsZero()) {
+		c.log.DebugContext(ctx, "upload: meme already settled, skipped", "meme_id", id)
+		return true
+	}
+	return false
+}
+
+// apiWarmupFailed forgets a meme the server no longer has (deleted memes are
+// not in the feed) or that is no photo after all; other errors are retried
+// by the next queueAPIWarmup.
+func (c *Cache) apiWarmupFailed(ctx context.Context, id int64, err error) {
+	if !errors.Is(err, memesearch.ErrNotFound) && !errors.Is(err, ErrNotPhoto) {
+		c.log.DebugContext(ctx, "upload: API warmup download failed, retried later", "meme_id", id, "err", err)
+		return
+	}
+	c.log.DebugContext(ctx, "upload: meme gone or not a photo, dropped from API warmup", "meme_id", id, "err", err)
+	if err := c.deleteAPIMeme(ctx, id); err != nil {
+		c.log.WarnContext(ctx, "upload: forget meme", "meme_id", id, "err", err)
+	}
 }
 
 // stored records a successful upload on the library row and the meme.

@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
+	"github.com/grbit/meme-search-telegram-bot/memesearch"
 	"github.com/grbit/meme-search-telegram-bot/store"
 )
 
@@ -35,6 +38,17 @@ var migrations = []string{
 		fail_reason TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX mediacache_memes_file_unique_id ON mediacache_memes (file_unique_id);`,
+	// The change feed: its cursor, and the photo memes it reported, which
+	// warmup uploads from the API when there is no library dir to scan.
+	`CREATE TABLE mediacache_feed (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		cursor TEXT NOT NULL
+	);
+	CREATE TABLE mediacache_api_memes (
+		meme_id INTEGER PRIMARY KEY,
+		filename TEXT NOT NULL,
+		media_type TEXT NOT NULL
+	);`,
 }
 
 // libRow is one row of the library index. relPath uses forward slashes.
@@ -92,6 +106,26 @@ func (c *Cache) libraryByName(ctx context.Context, base string) ([]libRow, error
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// libraryFor returns the library rows m may be. A server that reports the
+// meme's folder names one exact path, since LibraryDir is meme-search's memes
+// root; when no file is there (LibraryDir mounted at another level, or an
+// older server without the field) every file with m's base name is a candidate.
+func (c *Cache) libraryFor(ctx context.Context, m memesearch.Meme) ([]libRow, error) {
+	if m.Folder != "" && m.Filename != "" {
+		rel := path.Join(m.Folder, m.Filename)
+		r, ok, err := c.libraryRow(ctx, rel)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			c.log.DebugContext(ctx, "library match by folder", "meme_id", m.ID, "rel_path", rel)
+			return []libRow{r}, nil
+		}
+		c.log.DebugContext(ctx, "library: no file at the meme's folder, matching by name", "meme_id", m.ID, "rel_path", rel)
+	}
+	return c.libraryByName(ctx, m.Filename)
 }
 
 // fileMeta is what a rescan compares to decide whether to hash a file again.
@@ -289,6 +323,90 @@ func (c *Cache) knownSHA256(ctx context.Context, sum [32]byte) (bool, error) {
 	err := c.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM mediacache_library WHERE sha256 = ?)`, sum[:]).Scan(&n)
 	if err != nil {
 		return false, fmt.Errorf("mediacache: known sha256: %w", err)
+	}
+	return n == 1, nil
+}
+
+func (c *Cache) feedCursor(ctx context.Context) (string, error) {
+	var cur string
+	err := c.db.QueryRowContext(ctx, `SELECT cursor FROM mediacache_feed WHERE id = 1`).Scan(&cur)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("mediacache: read feed cursor: %w", err)
+	}
+	return cur, nil
+}
+
+func (c *Cache) setFeedCursor(ctx context.Context, cur string) error {
+	return store.WriteTx(ctx, c.db, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO mediacache_feed (id, cursor) VALUES (1, ?)
+			ON CONFLICT (id) DO UPDATE SET cursor = excluded.cursor`, cur)
+		if err != nil {
+			return fmt.Errorf("mediacache: store feed cursor: %w", err)
+		}
+		return nil
+	})
+}
+
+func (c *Cache) upsertAPIMemes(ctx context.Context, ms []memesearch.Meme) error {
+	if len(ms) == 0 {
+		return nil
+	}
+	return store.WriteTx(ctx, c.db, func(tx *sql.Tx) error {
+		for _, m := range ms {
+			_, err := tx.ExecContext(ctx, `INSERT INTO mediacache_api_memes (meme_id, filename, media_type) VALUES (?, ?, ?)
+				ON CONFLICT (meme_id) DO UPDATE SET filename = excluded.filename, media_type = excluded.media_type`,
+				m.ID, m.Filename, m.MediaType)
+			if err != nil {
+				return fmt.Errorf("mediacache: store meme %d: %w", m.ID, err)
+			}
+		}
+		return nil
+	})
+}
+
+func (c *Cache) deleteAPIMeme(ctx context.Context, id int64) error {
+	return store.WriteTx(ctx, c.db, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM mediacache_api_memes WHERE meme_id = ?`, id); err != nil {
+			return fmt.Errorf("mediacache: forget meme %d: %w", id, err)
+		}
+		return nil
+	})
+}
+
+// pendingAPIWarmup lists feed memes without a file_id that did not fail.
+func (c *Cache) pendingAPIWarmup(ctx context.Context) ([]memesearch.Meme, error) {
+	rows, err := c.db.QueryContext(ctx, `SELECT a.meme_id, a.filename, a.media_type
+		FROM mediacache_api_memes a LEFT JOIN mediacache_memes m ON m.meme_id = a.meme_id
+		WHERE m.meme_id IS NULL OR (m.file_id = '' AND m.failed_at IS NULL)`)
+	if err != nil {
+		return nil, fmt.Errorf("mediacache: list pending API uploads: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []memesearch.Meme
+	for rows.Next() {
+		var m memesearch.Meme
+		if err := rows.Scan(&m.ID, &m.Filename, &m.MediaType); err != nil {
+			return nil, fmt.Errorf("mediacache: list pending API uploads: %w", err)
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// libraryHasFolder reports whether any indexed file sits directly in folder
+// (relative, forward slashes).
+func (c *Cache) libraryHasFolder(ctx context.Context, folder string) (bool, error) {
+	prefix := strings.TrimSuffix(folder, "/") + "/"
+	var n int
+	// substr instead of LIKE: folder names may contain % and _.
+	err := c.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM mediacache_library
+		WHERE substr(rel_path, 1, length(?1)) = ?1 AND instr(substr(rel_path, length(?1) + 1), '/') = 0)`,
+		prefix).Scan(&n)
+	if err != nil {
+		return false, fmt.Errorf("mediacache: library folder lookup: %w", err)
 	}
 	return n == 1, nil
 }

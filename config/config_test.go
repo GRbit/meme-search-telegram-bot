@@ -68,6 +68,7 @@ func TestDefaults(t *testing.T) {
 	want.Media.WarmupInterval = 6 * time.Hour
 	want.Media.UploadsPerMin = 20
 	want.Media.WarmupUploadsPerMin = 10
+	want.Media.FeedInterval = time.Minute
 	want.Access.PublicDailyPerUser = 5
 	want.Access.PublicDailyTotal = 120
 	want.Access.InlineChargeWindow = 10 * time.Second
@@ -75,6 +76,7 @@ func TestDefaults(t *testing.T) {
 	want.Saver.Dir = filepath.Join(exe, "memes")
 	want.Saver.DirPrefix = "tg-"
 	want.Saver.Mode = saver.ModePerUser
+	want.Saver.Backend = saver.BackendFolder
 	want.Saver.Folder = "telegram"
 	want.Saver.Location = time.UTC
 
@@ -93,6 +95,7 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		"CACHE_CHAT_ID=-1001234567890",
 		"LIBRARY_DIR=/lib",
 		"WARMUP_INTERVAL=1h30m",
+		"FEED_INTERVAL=30s",
 		"CACHE_UPLOADS_PER_MIN=30",
 		"WARMUP_UPLOADS_PER_MIN=30",
 		"RESULTS_PER_PAGE=10",
@@ -105,6 +108,8 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		"SAVE_MODE=single",
 		"SAVE_FOLDER=all_memes",
 		"SAVE_NOTE=see you",
+		"SAVE_NOTIFY=false",
+		"SAVE_BACKEND=api",
 		"SAVE_USER_IDS=1, 2,3",
 		"TRUSTED_USER_IDS= 4 ,5 ",
 		"PUBLIC_DAILY_PER_USER=0",
@@ -132,6 +137,7 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		{"Media.CacheChatID", c.Media.CacheChatID, int64(-1001234567890)},
 		{"Media.LibraryDir", c.Media.LibraryDir, "/lib"},
 		{"Media.WarmupInterval", c.Media.WarmupInterval, 90 * time.Minute},
+		{"Media.FeedInterval", c.Media.FeedInterval, 30 * time.Second},
 		{"Media.UploadsPerMin", c.Media.UploadsPerMin, 30},
 		{"Media.WarmupUploadsPerMin", c.Media.WarmupUploadsPerMin, 30},
 		{"Search.ResultsPerPage", c.Search.ResultsPerPage, 10},
@@ -144,6 +150,8 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		{"Saver.Mode", c.Saver.Mode, saver.ModeSingle},
 		{"Saver.Folder", c.Saver.Folder, "all_memes"},
 		{"Saver.Note", c.Saver.Note, "see you"},
+		{"Saver.NoNotify", c.Saver.NoNotify, true},
+		{"Saver.Backend", c.Saver.Backend, saver.BackendAPI},
 		{"Access.SaveUserIDs", c.Access.SaveUserIDs, []int64{1, 2, 3}},
 		{"Access.TrustedUserIDs", c.Access.TrustedUserIDs, []int64{4, 5}},
 		{"Access.PublicDailyPerUser", c.Access.PublicDailyPerUser, 0},
@@ -312,6 +320,9 @@ func TestValidation(t *testing.T) {
 		{"window negative", env("INLINE_CHARGE_WINDOW=-1s"), "INLINE_CHARGE_WINDOW"},
 		{"window bad", env("INLINE_CHARGE_WINDOW=10"), "INLINE_CHARGE_WINDOW"},
 		{"warmup interval negative", env("WARMUP_INTERVAL=-1s"), "WARMUP_INTERVAL"},
+		{"feed interval negative", env("FEED_INTERVAL=-1s"), "FEED_INTERVAL"},
+		{"save notify not a bool", env("SAVE_NOTIFY=maybe"), "SAVE_NOTIFY"},
+		{"save backend unknown", env("SAVE_BACKEND=s3"), "SAVE_BACKEND"},
 		{"uploads negative", env("CACHE_UPLOADS_PER_MIN=-1"), "CACHE_UPLOADS_PER_MIN"},
 		{"warmup uploads negative", env("WARMUP_UPLOADS_PER_MIN=-1"), "WARMUP_UPLOADS_PER_MIN"},
 		{"warmup above total", env("CACHE_UPLOADS_PER_MIN=5", "WARMUP_UPLOADS_PER_MIN=6"), "WARMUP_UPLOADS_PER_MIN"},
@@ -319,6 +330,7 @@ func TestValidation(t *testing.T) {
 		{"ids bad", env("SAVE_USER_IDS=1,x"), "SAVE_USER_IDS"},
 		{"save mode unknown", env("SAVE_MODE=shared"), "SAVE_MODE"},
 		{"save folder nested", env("SAVE_MODE=single", "SAVE_FOLDER=a/b"), "SAVE_FOLDER"},
+		{"save folder nested in nested mode", env("SAVE_MODE=nested", "SAVE_FOLDER=a/b"), "SAVE_FOLDER"},
 		{"ids not positive", env("SAVE_USER_IDS=1,0"), "SAVE_USER_IDS"},
 		{"trusted negative", env("TRUSTED_USER_IDS=-5"), "TRUSTED_USER_IDS"},
 		{"trusted bad", env("TRUSTED_USER_IDS=1;2"), "TRUSTED_USER_IDS"},
@@ -332,6 +344,13 @@ func TestValidation(t *testing.T) {
 				t.Errorf("err = %v, want mention of %s", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestSaveModeNested(t *testing.T) {
+	c := mustLoad(t, env("SAVE_MODE=nested", "SAVE_FOLDER=tgmemes"), t.TempDir())
+	if c.Saver.Mode != saver.ModeNested || c.Saver.Folder != "tgmemes" {
+		t.Errorf("mode = %q, folder = %q", c.Saver.Mode, c.Saver.Folder)
 	}
 }
 

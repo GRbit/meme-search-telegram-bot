@@ -155,8 +155,22 @@ from and the hash is the first 20 hex chars of the file's SHA-256.
 meme-search does not pick up new folders by itself, and it serves images only from flat folders: register the
 folder in meme-search **Settings -> Image paths** by its bare name. In single mode that is one folder
 (`telegram`), registered once; in per_user mode it is one per user (`tg-alice`), after they saved the first meme.
+
+With `SAVE_MODE=nested` each user gets a subfolder of `SAVE_FOLDER`, e.g. `telegram/alice/` (no
+`SAVE_DIR_PREFIX`). Register `telegram` once with "include subfolders": every new user's folder is then picked
+up on the next scan of the parent. This option exists only in meme-search builds that have it (not in stock
+meme-search). Switching an existing setup to nested mode does not move old `tg-*` folders; they stay registered
+as they are.
 New files in a registered folder are indexed on the next rescan and become searchable once their
 description is generated.
+With `SAVE_BACKEND=api` the bot uploads saved memes through meme-search's upload API (the
+`MEME_SEARCH_API_TOKEN` then needs the `media:write` scope too) and asks for the description right away, so no rescan
+is needed. The API fills only folders registered in meme-search: an unregistered save folder, or a server
+without the upload API, makes the bot write the file as usual. Without a shared volume, use `SAVE_MODE=single`
+with a registered `SAVE_FOLDER`.
+If meme-search has the meme listing (`GET /api/v1/memes`), the bot replies to a saved meme once search can
+find it (or once its description failed), one reply per album (`SAVE_NOTIFY=false` turns this off). The same change feed lets the bot warm up new
+memes within `FEED_INTERVAL`, and without `LIBRARY_DIR` straight from the API.
 
 Files are written as uid 1000 (the image's default, the same as meme-search's upload folder). If your folder
 belongs to another uid, rebuild the image with `--build-arg APP_UID=<uid>`.
@@ -276,13 +290,16 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `CACHE_CHAT_ID` | empty | Private cache channel id; empty disables inline mode and warmup |
 | `LIBRARY_DIR` | `SAVE_DIR` | Library root scanned for warmup and file name matching |
 | `WARMUP_INTERVAL` | `6h` | How often the library is rescanned |
+| `FEED_INTERVAL` | `1m` | How often the change feed is polled (servers with the meme listing only) |
 | `CACHE_UPLOADS_PER_MIN` | `20` | All uploads to the cache channel per minute |
 | `WARMUP_UPLOADS_PER_MIN` | `10` | Background warmup uploads per minute, at most the value above |
 | `SAVE_DIR` | `memes/` next to the binary, `/memes` in Docker | Where saved memes go |
-| `SAVE_MODE` | `per_user` | `per_user`: a folder per user; `single`: one folder for everybody |
-| `SAVE_FOLDER` | `telegram` | The folder of `single` mode; letters, digits, `-`, `_` |
+| `SAVE_MODE` | `per_user` | `per_user`: a folder per user; `single`: one folder for everybody; `nested`: `SAVE_FOLDER/<username>` |
+| `SAVE_FOLDER` | `telegram` | The folder of `single` mode, the parent of `nested` mode; letters, digits, `-`, `_` |
 | `SAVE_DIR_PREFIX` | `tg-` | Prefix of per-user save folders (`per_user` mode) |
 | `SAVE_NOTE` | empty | Text added to the "Saved" reply |
+| `SAVE_BACKEND` | `folder` | `folder`: write files; `api`: upload through meme-search's API (API token needs `media:write`), files as fallback |
+| `SAVE_NOTIFY` | `true` | Reply when a saved meme becomes searchable (servers with the meme listing only) |
 | `SAVE_USER_IDS` | empty | User ids allowed to save; empty disables saving |
 | `TRUSTED_USER_IDS` | empty | User ids with unlimited search |
 | `PUBLIC_DAILY_PER_USER` | `5` | Searches per day for everyone else; `0` disables public search |
@@ -310,7 +327,8 @@ they do not cost extra. Counters are stored in SQLite and reset at midnight in
   whether inline mode is on. Right after the first start the cache is empty: results appear as uploads finish.
 - **"Search failed":** run with `LOG_LEVEL=debug`; a `401`/`403` from meme-search means a wrong token or a
   missing scope.
-- **Saved memes do not show up:** register the save folder (`tg-<username>`, or `SAVE_FOLDER` in single mode)
+- **Saved memes do not show up:** register the save folder (`tg-<username>`, or `SAVE_FOLDER` in single mode, or `SAVE_FOLDER` with "include
+  subfolders" in nested mode)
   in meme-search Settings -> Image paths and wait for descriptions to be generated.
 - **Permission denied writing memes or the database:** the mounted folders must be writable by uid 1000 (or the
   `APP_UID` you built with).

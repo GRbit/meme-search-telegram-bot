@@ -90,7 +90,8 @@ Saving (module `saver`):
 5. **Photo or image document -> file** under `SAVE_DIR/<prefix><sender>/`, `<sender>` = Telegram username of the
    person talking to the bot (fallback `id<user id>`), `prefix` from `SAVE_DIR_PREFIX` (default `tg-`). Flat folders
    only; README says each folder is registered in meme-search Settings -> Image paths by its bare name. With
-   `SAVE_MODE=single` every sender shares `SAVE_DIR/<SAVE_FOLDER>/` instead (see Implementation notes). File name
+   `SAVE_MODE=single` every sender shares `SAVE_DIR/<SAVE_FOLDER>/` instead, with `SAVE_MODE=nested` each sender
+   gets `SAVE_DIR/<SAVE_FOLDER>/<sender>/` (see Implementation notes). File name
    `YYYY-MM-DD_<source>_<message id>_<sha256 first 20 hex>.<ext>`; `<source>` from `forward_origin` (user username
    or display name, channel username or title), non-forwarded -> sender's username. Sanitising: keep `\p{L}\p{N}`, everything else
    -> `_`, collapse runs, trim. `photo`: largest size; `document`: image MIME only; ignore stickers, GIFs, video.
@@ -244,6 +245,10 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   writes every allowed user's memes into `SAVE_DIR/<SAVE_FOLDER>`, so meme-search needs one registered folder and
   the folder duplicate check covers all users; `SAVE_DIR_PREFIX` is ignored there. `SAVE_FOLDER` is validated
   (letters, digits, `-`, `_`), not sanitized: the owner registers exactly that name in meme-search.
+- `SAVE_MODE=nested` (tasks 2.7) writes `SAVE_DIR/<SAVE_FOLDER>/<sender>/` without `SAVE_DIR_PREFIX`: the parent
+  already marks the folders as the bot's, and upstream L names the child path `<parent>/<child>`. The folder
+  duplicate check stays per sender, like per_user. No capability check: the mode only changes where files are
+  written, and it is useful only with a server that registers subfolders, which the owner picks knowingly.
 - A library row without its own `file_id` inherits `file_id` and `file_unique_id` from any row with the same
   SHA-256 (indexed since the first migration), on scan and on `AddLibraryFile`: Telegram's file_id follows content,
   so a renamed or moved folder costs a rehash, not days of re-uploads. It works within one scan because old rows
@@ -309,3 +314,29 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   can shift between requests), and "Page n of m+" says more exist. Only `next_offset` enables it, so an older
   server pages 20 as before; an ignored offset (downgrade mid-session) ends paging with "No more results" rather
   than repeating page 1. Fetches are free like paging and serialized per session. Similar by id never pages.
+- Change feed (tasks 2.3): `mediacache` polls `GET /api/v1/memes` every `FEED_INTERVAL` (1m) while the probe
+  reports the listing, at most 20 pages of 100 per poll (the listing has its own 60/min budget, so a first full
+  listing of a big library spreads over several polls). The cursor lives in `mediacache_feed` and is stored after
+  every page; `422 invalid_cursor` resets it. No poll at startup: the probe has not answered yet. With a library
+  dir, a feed meme whose file name is not indexed triggers an early rescan (the scan reads files, no API download).
+  Without one, photo memes go to `mediacache_api_memes` and are uploaded from the API at background priority
+  (queue key `api:<id>`, so a realtime job for the same meme is never merged into a job nobody waits for); every
+  `WARMUP_INTERVAL` the still-pending ones are queued again, a 404 or non-photo content drops the row. Deleted memes
+  are not in the feed; the periodic full relisting the API docs suggest is skipped, as a missed change is followed
+  by the description change anyway.
+- "Searchable now" notice: the saver records each written file in `saver_pending` (only while the server has the
+  listing) keyed by the message it replied to, and `MemesChanged` (fed by `mediacache.Cache.OnFeed`) marks rows
+  ready or failed by base name. One reply per message or album once nothing in it is pending; rows older than 7
+  days are dropped silently (e.g. a folder not registered in meme-search).
+- Folder matching (tasks 2.1, mediacache side): a meme with `folder` is looked up at `<folder>/<filename>` in the
+  library index first, since `LIBRARY_DIR` is meme-search's memes root; a hit settles name collisions without
+  downloading the content to compare hashes. No row there (an older server without the field, or `LIBRARY_DIR`
+  mounted at another level) falls back to the base-name lookup. For the feed's rescan trigger a name found in
+  another folder counts as indexed only when the index has no file in the meme's folder at all (layouts differ);
+  otherwise every poll in such a setup would rescan.
+- Save through the API (tasks 2.6): `SAVE_BACKEND=api` uploads each saved file (API token with `media:write`) into
+  `FolderFor`'s folder, `generate_description=true`, while the probe reports the upload capability. Created ->
+  "Saved" (and the searchable notice tracks the stored name), duplicate in folder -> "Already saved", per-file
+  error or a failed request -> "Could not save". `ErrUnsupported` and `422 invalid_folder` fall back to the folder
+  writer, which creates the folder for the owner (or upstream L) to register. No local file means no
+  `AddLibraryFile`; the feed warms the meme up.

@@ -7,3 +7,7 @@ saver.error: "Не удалось сохранить, попробуй позж�
 saver.album_already: "Уже есть в коллекции: {{.Count}}."
 saver.album_duplicate: "Уже сохранено раньше: {{.Count}}."
 saver.album_failed: "Не удалось сохранить: {{.Count}}."
+saver.searchable: "Теперь этот мем находится поиском."
+saver.searchable_album: "Теперь поиском находятся мемы отсюда: {{.Count}}."
+saver.describe_failed: "meme-search не смог описать этот мем, поиск его не найдёт."
+saver.describe_failed_album: "Не удалось описать, поиск их не найдёт: {{.Count}}."

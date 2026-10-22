@@ -4,6 +4,7 @@ package saver
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -19,6 +21,7 @@ import (
 
 	"github.com/grbit/meme-search-telegram-bot/configerr"
 	"github.com/grbit/meme-search-telegram-bot/i18n"
+	"github.com/grbit/meme-search-telegram-bot/memesearch"
 	"github.com/grbit/meme-search-telegram-bot/module"
 )
 
@@ -42,11 +45,30 @@ type Config struct {
 	AlbumDebounce time.Duration  // wait after the last album item before replying; 0 means 2s
 	Location      *time.Location // date in file names; nil means UTC
 	Mode          Mode           // "" means ModePerUser
-	// Folder is the one folder of ModeSingle: letters, digits, "-" and "_"
-	// only, so it is a single path element meme-search can register by name.
-	// "" means "telegram".
+	// Folder is the one folder of ModeSingle and the parent of ModeNested:
+	// letters, digits, "-" and "_" only, so it is a single path element
+	// meme-search can register by name. "" means "telegram".
 	Folder string
+	// NoNotify turns off the "searchable now" reply; it is negative so the
+	// zero value keeps the notice on.
+	NoNotify bool
+	Backend  Backend // "" means BackendFolder
 }
+
+// Backend chooses how a saved meme reaches meme-search.
+type Backend string
+
+// Save backends.
+//
+// BackendAPI posts to meme-search's upload API (POST /api/v2/memes) into the
+// save folder, so saving needs no shared volume and the meme is described
+// without waiting for a rescan. The folder writer stays the fallback: on a
+// server without the API, with an API token lacking media:write, or when the save folder
+// is not registered in meme-search (the API cannot create folders).
+const (
+	BackendFolder Backend = "folder"
+	BackendAPI    Backend = "api"
+)
 
 // Mode chooses the save folder layout.
 type Mode string
@@ -58,6 +80,9 @@ type Mode string
 const (
 	ModePerUser Mode = "per_user" // Dir/<DirPrefix><sender>
 	ModeSingle  Mode = "single"   // Dir/<Folder> for every sender
+	// ModeNested is Dir/<Folder>/<sender>: meme-search registers the parent once
+	// with "include subfolders" and picks up every new sender's folder itself.
+	ModeNested Mode = "nested"
 )
 
 const defaultFolder = "telegram"
@@ -86,10 +111,16 @@ func (c Config) Validate() error {
 		errs = append(errs, &configerr.Field{Name: "AlbumDebounce", Reason: "must not be negative"})
 	}
 	switch c.Mode {
-	case "", ModePerUser, ModeSingle:
+	case "", ModePerUser, ModeSingle, ModeNested:
 	default:
 		errs = append(errs, &configerr.Field{Name: "Mode",
-			Reason: fmt.Sprintf("must be %q or %q, got %q", ModePerUser, ModeSingle, c.Mode)})
+			Reason: fmt.Sprintf("must be %q, %q or %q, got %q", ModePerUser, ModeSingle, ModeNested, c.Mode)})
+	}
+	switch c.Backend {
+	case "", BackendFolder, BackendAPI:
+	default:
+		errs = append(errs, &configerr.Field{Name: "Backend",
+			Reason: fmt.Sprintf("must be %q or %q, got %q", BackendFolder, BackendAPI, c.Backend)})
 	}
 	if c.Folder != "" && !validFolder(c.Folder) {
 		errs = append(errs, &configerr.Field{Name: "Folder",
@@ -118,7 +149,20 @@ type Deps struct {
 	I18n   *i18n.Bundle
 	Log    *slog.Logger
 	HTTP   *http.Client     // downloads files from Telegram; nil means http.DefaultClient
-	Now    func() time.Time // nil means time.Now; used only for messages without a date
+	Now    func() time.Time // nil means time.Now; dates messages without one, ages pending notices
+	// DB and Caps enable the "searchable now" notice; both are optional. It
+	// is used only while Caps reports the server's change feed (listing),
+	// where description_status arrives; feed pages come in via MemesChanged.
+	DB   *sql.DB
+	Caps memesearch.CapabilitySource
+	// Uploader is required with BackendAPI (with Caps, which says whether the
+	// server takes uploads); *memesearch.HTTPClient implements it.
+	Uploader Uploader
+}
+
+// Uploader is the slice of the meme-search API the API backend needs.
+type Uploader interface {
+	Upload(ctx context.Context, files []memesearch.UploadFile, opts memesearch.UploadOptions) (memesearch.UploadResult, error)
 }
 
 // Module implements module.Module.
@@ -133,6 +177,11 @@ type Module struct {
 	hashes folderHashes
 	albums *albums
 	httpc  *http.Client
+	// bot is the one Register got; MemesChanged runs outside any update.
+	bot atomic.Pointer[bot.Bot]
+	// unregistered holds folders the upload API refused, so the owner sees one
+	// Info line per folder until it is registered, not one per save.
+	unregistered sync.Map
 	// downloadTimeout bounds getFile plus the download: an album reply waits for
 	// every item, so one stalled connection must not hold it forever.
 	downloadTimeout time.Duration
@@ -153,6 +202,12 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	}
 	if deps.I18n == nil {
 		return nil, errors.New("saver: Deps.I18n is required")
+	}
+	if cfg.Backend == "" {
+		cfg.Backend = BackendFolder
+	}
+	if cfg.Backend == BackendAPI && (deps.Uploader == nil || deps.Caps == nil) {
+		return nil, errors.New("saver: the API backend needs Deps.Uploader and Deps.Caps")
 	}
 	if cfg.AlbumDebounce == 0 {
 		cfg.AlbumDebounce = 2 * time.Second
@@ -176,20 +231,28 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	if httpc == nil {
 		httpc = http.DefaultClient
 	}
+	if deps.DB != nil {
+		if err := migrate(deps.DB); err != nil {
+			return nil, err
+		}
+	}
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
 		return nil, fmt.Errorf("saver: create dir: %w", err)
 	}
 	m := &Module{cfg: cfg, deps: deps, log: deps.Log, httpc: httpc, downloadTimeout: defaultDownloadTimeout, hashes: folderHashes{}}
 	m.albums = newAlbums(cfg.AlbumDebounce, m.flushAlbum)
-	if cfg.Mode == ModeSingle {
-		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "dir", cfg.Dir, "folder", cfg.Folder)
+	if cfg.Mode == ModeSingle || cfg.Mode == ModeNested {
+		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "backend", string(cfg.Backend), "dir", cfg.Dir,
+			"folder", cfg.Folder)
 	} else {
-		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "dir", cfg.Dir, "dir_prefix", cfg.DirPrefix)
+		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "backend", string(cfg.Backend), "dir", cfg.Dir,
+			"dir_prefix", cfg.DirPrefix)
 	}
 	return m, nil
 }
 
 // Register attaches the module's handlers.
 func (m *Module) Register(b *bot.Bot) {
+	m.bot.Store(b)
 	b.RegisterHandlerMatchFunc(m.match, m.handle)
 }

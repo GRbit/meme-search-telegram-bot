@@ -74,6 +74,9 @@ type Config struct {
 	WarmupInterval      time.Duration // how often the library is rescanned; 0 means 6h
 	UploadsPerMin       int           // all uploads to the cache channel; 0 means 20
 	WarmupUploadsPerMin int           // background cap, at most UploadsPerMin; 0 means 10 (or UploadsPerMin if lower)
+	// FeedInterval is how often the server's change feed is polled, when
+	// Deps.Lister is set and the server has the listing; 0 means 1m.
+	FeedInterval time.Duration
 }
 
 // Validate reports every invalid field as a *configerr.Field.
@@ -93,6 +96,9 @@ func (c Config) Validate() error {
 	} else if total := c.withDefaults().UploadsPerMin; c.UploadsPerMin >= 0 && c.WarmupUploadsPerMin > total {
 		bad("WarmupUploadsPerMin", "must be at most UploadsPerMin (%d), got %d", total, c.WarmupUploadsPerMin)
 	}
+	if c.FeedInterval < 0 {
+		bad("FeedInterval", "must not be negative, got %s", c.FeedInterval)
+	}
 	return errors.Join(errs...)
 }
 
@@ -105,6 +111,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.WarmupUploadsPerMin == 0 {
 		c.WarmupUploadsPerMin = min(DefaultWarmupUploadsPerMin, c.UploadsPerMin)
+	}
+	if c.FeedInterval == 0 {
+		c.FeedInterval = DefaultFeedInterval
 	}
 	return c
 }
@@ -121,6 +130,11 @@ type Deps struct {
 	Sender PhotoSender
 	Log    *slog.Logger
 	Now    func() time.Time // nil means time.Now
+	// Lister and Caps enable the change feed; both are optional. The feed
+	// polls only while Caps reports the listing, so an older server gets no
+	// extra requests.
+	Lister MemeLister
+	Caps   memesearch.CapabilitySource
 }
 
 // Cache is the media cache. Run must be running for uploads and warmup to happen.
@@ -150,6 +164,14 @@ type Cache struct {
 	scanMu  sync.Mutex
 	indexOn *bool // nil until the first scan; logs only on change
 	scans   atomic.Int64
+	rescan  chan struct{} // the feed saw files the index lacks
+
+	lister       MemeLister
+	caps         memesearch.CapabilitySource
+	feedListener func(context.Context, []memesearch.Meme) // guarded by mu
+	feedMu       sync.Mutex                               // one poll at a time: the cursor is shared
+	feedLimit    int
+	feedPages    int
 }
 
 // New validates the config and applies the cache's migrations.
@@ -210,6 +232,11 @@ func newCache(ctx context.Context, cfg Config, deps Deps, clock limiter.Clock) (
 		calls:       map[int64]*call{},
 		current:     map[int64]map[int64]struct{}{},
 		maxEnqueued: defaultMaxEnqueued,
+		rescan:      make(chan struct{}, 1),
+		lister:      deps.Lister,
+		caps:        deps.Caps,
+		feedLimit:   memesearch.MaxListLimit,
+		feedPages:   defaultFeedPages,
 	}, nil
 }
 
@@ -239,11 +266,15 @@ func (c *Cache) run(ctx context.Context, scanLoop bool) error {
 	}
 	c.log.InfoContext(ctx, "media cache started", "cache_chat_id", c.cfg.CacheChatID,
 		"library_dir", c.cfg.LibraryDir, "warmup_interval", c.cfg.WarmupInterval,
-		"uploads_per_min", c.cfg.UploadsPerMin, "warmup_uploads_per_min", c.cfg.WarmupUploadsPerMin)
+		"uploads_per_min", c.cfg.UploadsPerMin, "warmup_uploads_per_min", c.cfg.WarmupUploadsPerMin,
+		"feed", c.feedEnabled(), "feed_interval", c.cfg.FeedInterval)
 	var wg sync.WaitGroup
 	wg.Go(func() { c.work(ctx) })
 	if scanLoop {
 		wg.Go(func() { c.scanLoop(ctx) })
+		if c.feedEnabled() {
+			wg.Go(func() { c.feedLoop(ctx) })
+		}
 	}
 	<-ctx.Done()
 	for _, j := range c.queue.Close() {
@@ -257,8 +288,14 @@ func (c *Cache) run(ctx context.Context, scanLoop bool) error {
 
 func (c *Cache) scanLoop(ctx context.Context) {
 	for {
-		if _, err := c.scan(ctx); err != nil && ctx.Err() == nil {
+		st, err := c.scan(ctx)
+		if err != nil && ctx.Err() == nil {
 			c.log.WarnContext(ctx, "library scan failed", "err", err)
+		}
+		if err == nil && !st.enabled && c.cfg.CacheChatID != 0 && c.feedEnabled() {
+			if err := c.queueAPIWarmup(ctx); err != nil && ctx.Err() == nil {
+				c.log.WarnContext(ctx, "API warmup failed", "err", err)
+			}
 		}
 		tick, stop := c.clock.After(c.cfg.WarmupInterval)
 		select {
@@ -266,6 +303,9 @@ func (c *Cache) scanLoop(ctx context.Context) {
 			stop()
 			return
 		case <-tick:
+		case <-c.rescan:
+			stop()
+			c.log.DebugContext(ctx, "library rescan requested by the feed")
 		}
 	}
 }
@@ -285,7 +325,7 @@ func (c *Cache) Lookup(ctx context.Context, m memesearch.Meme) (fileID string, o
 		c.log.DebugContext(ctx, "cache hit by meme id", "meme_id", m.ID)
 		return mr.fileID, true
 	}
-	rows, err := c.libraryByName(ctx, m.Filename)
+	rows, err := c.libraryFor(ctx, m)
 	if err != nil {
 		c.lookupErr(ctx, m, err)
 		return "", false

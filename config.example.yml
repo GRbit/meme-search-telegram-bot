@@ -22,15 +22,18 @@ cache:
   # chat_id:              # CACHE_CHAT_ID, private channel id like -1001234567890; empty = inline off
   # library_dir:          # LIBRARY_DIR, default = saver.dir
   warmup_interval: 6h      # WARMUP_INTERVAL
+  feed_interval: 1m        # FEED_INTERVAL, change feed polling (servers with the meme listing only)
   uploads_per_min: 20      # CACHE_UPLOADS_PER_MIN
   warmup_uploads_per_min: 10   # WARMUP_UPLOADS_PER_MIN
 
 saver:
   # dir:                  # SAVE_DIR, default memes/ next to the executable
-  mode: per_user           # SAVE_MODE: per_user (folder per user) or single (one folder)
-  folder: telegram         # SAVE_FOLDER, the folder of single mode
+  mode: per_user           # SAVE_MODE: per_user (folder per user), single (one folder) or nested (folder/<user>)
+  folder: telegram         # SAVE_FOLDER, the folder of single mode, the parent of nested mode
   dir_prefix: tg-          # SAVE_DIR_PREFIX, per_user mode only
   note: ""                 # SAVE_NOTE, appended to the "Saved" reply
+  notify: true             # SAVE_NOTIFY, reply when a saved meme becomes searchable
+  backend: folder          # SAVE_BACKEND: folder (write files) or api (upload API, files as fallback)
 
 access:
   save_user_ids: []        # SAVE_USER_IDS, e.g. [111111, 222222]; also trusted

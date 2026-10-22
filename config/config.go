@@ -109,6 +109,9 @@ var settings = []setting{
 	{env: "WARMUP_INTERVAL", key: "cache.warmup_interval", field: "Media.WarmupInterval", def: "6h",
 		set: func(c *Config, v string) error { return parseDuration(v, &c.Media.WarmupInterval) },
 		get: func(c *Config) string { return c.Media.WarmupInterval.String() }},
+	{env: "FEED_INTERVAL", key: "cache.feed_interval", field: "Media.FeedInterval", def: "1m",
+		set: func(c *Config, v string) error { return parseDuration(v, &c.Media.FeedInterval) },
+		get: func(c *Config) string { return c.Media.FeedInterval.String() }},
 	{env: "CACHE_UPLOADS_PER_MIN", key: "cache.uploads_per_min", field: "Media.UploadsPerMin", def: "20",
 		set: func(c *Config, v string) error { return parseInt(v, &c.Media.UploadsPerMin) },
 		get: func(c *Config) string { return strconv.Itoa(c.Media.UploadsPerMin) }},
@@ -130,6 +133,19 @@ var settings = []setting{
 	{env: "SAVE_NOTE", key: "saver.note",
 		set: func(c *Config, v string) error { c.Saver.Note = v; return nil },
 		get: func(c *Config) string { return c.Saver.Note }},
+	{env: "SAVE_BACKEND", key: "saver.backend", field: "Saver.Backend", def: string(saver.BackendFolder),
+		set: func(c *Config, v string) error { c.Saver.Backend = saver.Backend(v); return nil },
+		get: func(c *Config) string { return string(c.Saver.Backend) }},
+	{env: "SAVE_NOTIFY", key: "saver.notify", field: "Saver.NoNotify", def: "true",
+		set: func(c *Config, v string) error {
+			on, err := strconv.ParseBool(v)
+			if err != nil {
+				return fmt.Errorf("must be true or false, got %q", v)
+			}
+			c.Saver.NoNotify = !on
+			return nil
+		},
+		get: func(c *Config) string { return strconv.FormatBool(!c.Saver.NoNotify) }},
 	{env: "SAVE_USER_IDS", key: "access.save_user_ids", field: "Access.SaveUserIDs",
 		set: func(c *Config, v string) error { return parseIDs(v, &c.Access.SaveUserIDs) },
 		get: func(c *Config) string { return formatIDs(c.Access.SaveUserIDs) }},

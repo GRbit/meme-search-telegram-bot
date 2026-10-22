@@ -64,9 +64,9 @@ re-enables charging `srch:s:`. Switches to `GET /api/v1/memes/:id/similar` when 
 
 ### 2.1 Folder filter (needs D1 + D2)
 
-Done on the search side: capabilities, `/settings` picker, `dir:`, inline and group scope. Not done: the picker
-for `/memescope` (admins type `dir:` names, checked against the list), the "Only mine" host wiring (needs the saver
-to export its folder naming), and the mediacache part (another agent).
+Done: capabilities, `/settings` picker, `dir:`, inline and group scope, and mediacache matching by folder plus
+file name. Not done yet: the picker for `/memescope` (admins type `dir:` names, checked against the list) and the
+"Only mine" host wiring (saver now exports `FolderFor`).
 
 - Capability check at startup and every `WARMUP_INTERVAL`: `GET /api/v1/folders` 404 -> older server, folder
   options stay hidden (info log). After every filtered search compare `meta.folders` with what was sent: an
@@ -84,7 +84,12 @@ Done for `/settings`: "Pick tags" from the list, "Any tag"/"All tags". `/memesco
 
 `/settings` and `/memescope` pick tags from `GET /api/v1/tags`; optional "all of these tags" via `tag_match=all`.
 
-### 2.3 Listing and change feed (needs G)
+### 2.3 Listing and change feed (needs G) - done
+
+Done; see `docs/plan.md` implementation notes. Deviation: the notice matches saved files by base name (they end
+in a content hash) instead of storing meme ids, which the folder writer never learns. `SAVE_NOTIFY=false` turns
+the notice off. Not done: the occasional full relisting the API docs suggest against changes missed during a
+poll; a new meme changes again when its description arrives, so a miss heals itself.
 
 - Warmup without filesystem access: enumerate memes via the cursor listing instead of scanning `LIBRARY_DIR`
   (the library lives on another server today). Keep the folder scan for setups that have it.
@@ -105,13 +110,22 @@ Done. Fetches stay free, as paging always was: they continue a charged search.
 
 "More" fetches the next page with `offset` when the 20 cached ids run out.
 
-### 2.6 Save through the API (needs F2, maintainer decision pending)
+### 2.6 Save through the API (needs F2, maintainer decision pending) - done
+
+Done as `SAVE_BACKEND=api` (default `folder`). Upload goes to the save folder of `SAVE_MODE` with
+`generate_description=true`. Deviation: the API only fills registered folders, so `invalid_folder` (and a server
+without the API or token) falls back to the folder writer; transient upload errors do not (the user is told to
+retry), since a file written without a shared volume would never be found. One request per album item.
 
 New saver backend: `POST /api/v2/memes` with a `media:write` token into a chosen folder, so saving works without
 a shared volume and the meme is searchable without waiting for a rescan. Keep the folder writer for setups
 without the write API.
 
-### 2.7 Nested save folders (needs L)
+### 2.7 Nested save folders (needs L) - done
+
+Done as specified. The user folder is the bare sender name (`telegram/alice/`), without `SAVE_DIR_PREFIX`,
+matching L's `telegram/<user>/`. Nothing to detect: the bot only writes files, and on a server without L the
+owner simply does not choose this mode.
 
 `SAVE_MODE=nested`: every saver gets `SAVE_DIR/<SAVE_FOLDER>/<user>/` (one level, like L supports). With the parent
 registered once in meme-search with "include subfolders", a user added to `SAVE_USER_IDS` is searchable after
