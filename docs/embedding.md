@@ -19,14 +19,17 @@ b.RegisterHandlerMatchFunc(isVoice, transcribe) // your own handlers stay as the
 acc, _ := access.New(ctx, access.Config{TrustedUserIDs: []int64{me}, PublicDailyPerUser: 5, PublicDailyTotal: 100},
 	access.Deps{DB: db, I18n: bundle, Log: log})
 media, _ := mediacache.New(ctx, mediacache.Config{CacheChatID: cacheChat, LibraryDir: "/memes"},
-	mediacache.Deps{DB: db, API: api, Sender: b, Log: log})
+	mediacache.Deps{DB: db, API: api, Sender: b, Lister: api, Caps: api, Log: log}) // Lister, Caps: optional feed
 srch, _ := search.New(search.Config{}, search.Deps{API: api, Media: media, I18n: bundle, DB: db, Log: log,
 	Middlewares: []bot.Middleware{acc.Middleware(search.Chargeable)}})
-sv, _ := saver.New(saver.Config{Dir: "/memes"}, saver.Deps{Permit: acc, Known: media, I18n: bundle, Log: log})
+sv, _ := saver.New(saver.Config{Dir: "/memes"}, saver.Deps{Permit: acc, Known: media, I18n: bundle,
+	DB: db, Caps: api, Log: log}) // DB, Caps: optional "searchable now" notices
+media.OnFeed(sv.MemesChanged)
 
 for _, m := range []module.Module{srch, sv} {
 	m.Register(b)
 }
+go api.WatchCapabilities(ctx, 6*time.Hour)
 go media.Run(ctx)
 b.Start(ctx)
 ```

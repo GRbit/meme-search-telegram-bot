@@ -210,6 +210,14 @@ func (c *Cache) queueWarmup(ctx context.Context) (int, error) {
 	for i, rel := range rels {
 		jobs[i] = warmupJob(rel)
 	}
+	queued := c.pushWarmupJobs(ctx, jobs)
+	c.log.DebugContext(ctx, "warmup queued", "new_jobs", queued, "pending", len(rels))
+	return len(rels), nil
+}
+
+// pushWarmupJobs queues jobs at background priority, best first, and returns
+// how many were new. Jobs already queued are deduplicated by the queue.
+func (c *Cache) pushWarmupJobs(ctx context.Context, jobs []*job) int {
 	// Best first, so a full queue keeps the newest files and the rest waits.
 	slices.SortFunc(jobs, func(a, b *job) int {
 		switch {
@@ -226,7 +234,7 @@ func (c *Cache) queueWarmup(ctx context.Context) (int, error) {
 		if errors.Is(err, limiter.ErrFull) {
 			// Everything after ranks lower; a later scan retries once the
 			// queue drains (or evicts older files for newer ones).
-			c.log.DebugContext(ctx, "warmup queue full, rest waits for the next scan", "queued", queued, "pending", len(rels))
+			c.log.DebugContext(ctx, "warmup queue full, rest waits for the next scan", "queued", queued, "jobs", len(jobs))
 			break
 		}
 		if err != nil {
@@ -237,8 +245,7 @@ func (c *Cache) queueWarmup(ctx context.Context) (int, error) {
 			queued++
 		}
 	}
-	c.log.DebugContext(ctx, "warmup queued", "new_jobs", queued, "pending", len(rels))
-	return len(rels), nil
+	return queued
 }
 
 func warmupJob(rel string) *job {

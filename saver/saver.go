@@ -4,6 +4,7 @@ package saver
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -19,6 +21,7 @@ import (
 
 	"github.com/grbit/meme-search-telegram-bot/configerr"
 	"github.com/grbit/meme-search-telegram-bot/i18n"
+	"github.com/grbit/meme-search-telegram-bot/memesearch"
 	"github.com/grbit/meme-search-telegram-bot/module"
 )
 
@@ -121,7 +124,12 @@ type Deps struct {
 	I18n   *i18n.Bundle
 	Log    *slog.Logger
 	HTTP   *http.Client     // downloads files from Telegram; nil means http.DefaultClient
-	Now    func() time.Time // nil means time.Now; used only for messages without a date
+	Now    func() time.Time // nil means time.Now; dates messages without one, ages pending notices
+	// DB and Caps enable the "searchable now" notice; both are optional. It
+	// is used only while Caps reports the server's change feed (listing),
+	// where description_status arrives; feed pages come in via MemesChanged.
+	DB   *sql.DB
+	Caps memesearch.CapabilitySource
 }
 
 // Module implements module.Module.
@@ -136,6 +144,8 @@ type Module struct {
 	hashes folderHashes
 	albums *albums
 	httpc  *http.Client
+	// bot is the one Register got; MemesChanged runs outside any update.
+	bot atomic.Pointer[bot.Bot]
 	// downloadTimeout bounds getFile plus the download: an album reply waits for
 	// every item, so one stalled connection must not hold it forever.
 	downloadTimeout time.Duration
@@ -179,6 +189,11 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	if httpc == nil {
 		httpc = http.DefaultClient
 	}
+	if deps.DB != nil {
+		if err := migrate(deps.DB); err != nil {
+			return nil, err
+		}
+	}
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
 		return nil, fmt.Errorf("saver: create dir: %w", err)
 	}
@@ -194,5 +209,6 @@ func New(cfg Config, deps Deps) (*Module, error) {
 
 // Register attaches the module's handlers.
 func (m *Module) Register(b *bot.Bot) {
+	m.bot.Store(b)
 	b.RegisterHandlerMatchFunc(m.match, m.handle)
 }

@@ -68,6 +68,7 @@ func TestDefaults(t *testing.T) {
 	want.Media.WarmupInterval = 6 * time.Hour
 	want.Media.UploadsPerMin = 20
 	want.Media.WarmupUploadsPerMin = 10
+	want.Media.FeedInterval = time.Minute
 	want.Access.PublicDailyPerUser = 5
 	want.Access.PublicDailyTotal = 120
 	want.Access.InlineChargeWindow = 10 * time.Second
@@ -93,6 +94,7 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		"CACHE_CHAT_ID=-1001234567890",
 		"LIBRARY_DIR=/lib",
 		"WARMUP_INTERVAL=1h30m",
+		"FEED_INTERVAL=30s",
 		"CACHE_UPLOADS_PER_MIN=30",
 		"WARMUP_UPLOADS_PER_MIN=30",
 		"RESULTS_PER_PAGE=10",
@@ -132,6 +134,7 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		{"Media.CacheChatID", c.Media.CacheChatID, int64(-1001234567890)},
 		{"Media.LibraryDir", c.Media.LibraryDir, "/lib"},
 		{"Media.WarmupInterval", c.Media.WarmupInterval, 90 * time.Minute},
+		{"Media.FeedInterval", c.Media.FeedInterval, 30 * time.Second},
 		{"Media.UploadsPerMin", c.Media.UploadsPerMin, 30},
 		{"Media.WarmupUploadsPerMin", c.Media.WarmupUploadsPerMin, 30},
 		{"Search.ResultsPerPage", c.Search.ResultsPerPage, 10},
@@ -312,6 +315,7 @@ func TestValidation(t *testing.T) {
 		{"window negative", env("INLINE_CHARGE_WINDOW=-1s"), "INLINE_CHARGE_WINDOW"},
 		{"window bad", env("INLINE_CHARGE_WINDOW=10"), "INLINE_CHARGE_WINDOW"},
 		{"warmup interval negative", env("WARMUP_INTERVAL=-1s"), "WARMUP_INTERVAL"},
+		{"feed interval negative", env("FEED_INTERVAL=-1s"), "FEED_INTERVAL"},
 		{"uploads negative", env("CACHE_UPLOADS_PER_MIN=-1"), "CACHE_UPLOADS_PER_MIN"},
 		{"warmup uploads negative", env("WARMUP_UPLOADS_PER_MIN=-1"), "WARMUP_UPLOADS_PER_MIN"},
 		{"warmup above total", env("CACHE_UPLOADS_PER_MIN=5", "WARMUP_UPLOADS_PER_MIN=6"), "WARMUP_UPLOADS_PER_MIN"},

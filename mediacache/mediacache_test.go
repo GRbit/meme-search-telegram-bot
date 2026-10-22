@@ -3,6 +3,7 @@ package mediacache
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -130,9 +131,16 @@ type env struct {
 	sender *fakeSender
 	api    *fakeAPI
 	clk    *fakeclock.Clock
+	db     *sql.DB
 }
 
 func newEnv(t *testing.T, cfg Config) *env {
+	t.Helper()
+	return newEnvWith(t, cfg, nil)
+}
+
+// newEnvWith is newEnv with a hook to add optional Deps.
+func newEnvWith(t *testing.T, cfg Config, mutate func(*Deps)) *env {
 	t.Helper()
 	e := &env{t: t, sender: &fakeSender{}, api: &fakeAPI{content: map[int64][]byte{}}}
 	e.clk = fakeclock.New(time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC))
@@ -145,7 +153,11 @@ func newEnv(t *testing.T, cfg Config) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	e.db = db
 	deps := Deps{DB: db, API: e.api, Sender: e.sender, Log: testLogger(t), Now: e.clk.Now}
+	if mutate != nil {
+		mutate(&deps)
+	}
 	c, err := newCache(t.Context(), cfg, deps, e.clk)
 	if err != nil {
 		t.Fatal(err)
@@ -267,8 +279,8 @@ func TestConfigValidate(t *testing.T) {
 		{"zero is valid", Config{}, nil},
 		{"explicit", Config{CacheChatID: -1, WarmupInterval: time.Hour, UploadsPerMin: 30, WarmupUploadsPerMin: 30}, nil},
 		{"zero warmup with low total", Config{UploadsPerMin: 5}, nil},
-		{"negatives", Config{WarmupInterval: -1, UploadsPerMin: -1, WarmupUploadsPerMin: -1},
-			[]string{"WarmupInterval", "UploadsPerMin", "WarmupUploadsPerMin"}},
+		{"negatives", Config{WarmupInterval: -1, UploadsPerMin: -1, WarmupUploadsPerMin: -1, FeedInterval: -1},
+			[]string{"WarmupInterval", "UploadsPerMin", "WarmupUploadsPerMin", "FeedInterval"}},
 		{"warmup above total", Config{UploadsPerMin: 5, WarmupUploadsPerMin: 6}, []string{"WarmupUploadsPerMin"}},
 		{"warmup above default total", Config{WarmupUploadsPerMin: 21}, []string{"WarmupUploadsPerMin"}},
 	}
@@ -295,7 +307,7 @@ func TestDefaults(t *testing.T) {
 		t.Fatalf("defaults = %+v", c)
 	}
 	c = Config{}.withDefaults()
-	if c.UploadsPerMin != 20 || c.WarmupUploadsPerMin != 10 {
+	if c.UploadsPerMin != 20 || c.WarmupUploadsPerMin != 10 || c.FeedInterval != time.Minute {
 		t.Fatalf("defaults = %+v", c)
 	}
 }

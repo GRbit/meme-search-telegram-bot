@@ -97,3 +97,13 @@ func (a *albums) fire(key albumKey, gen int) {
 	a.mu.Unlock()
 	a.flush(*st)
 }
+
+// replyTo is the message an album's replies go to: its first item.
+func (a *albums) replyTo(key albumKey) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if st := a.items[key]; st != nil {
+		return st.replyTo
+	}
+	return 0
+}

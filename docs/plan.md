@@ -291,3 +291,17 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   turns an ignored parameter into `ErrUnsupported` rather than return unfiltered memes. The upload probe posts an
   empty form with `MEME_SEARCH_UPLOAD_TOKEN` (422 = usable, 403 = token lacks `media:write`); nothing is stored. The
   `Client` interface is unchanged so existing fakes stay valid; new endpoints are `HTTPClient` methods.
+- Change feed (tasks 2.3): `mediacache` polls `GET /api/v1/memes` every `FEED_INTERVAL` (1m) while the probe
+  reports the listing, at most 20 pages of 100 per poll (the listing has its own 60/min budget, so a first full
+  listing of a big library spreads over several polls). The cursor lives in `mediacache_feed` and is stored after
+  every page; `422 invalid_cursor` resets it. No poll at startup: the probe has not answered yet. With a library
+  dir, a feed meme whose file name is not indexed triggers an early rescan (the scan reads files, no API download).
+  Without one, photo memes go to `mediacache_api_memes` and are uploaded from the API at background priority
+  (queue key `api:<id>`, so a realtime job for the same meme is never merged into a job nobody waits for); every
+  `WARMUP_INTERVAL` the still-pending ones are queued again, a 404 or non-photo content drops the row. Deleted memes
+  are not in the feed; the periodic full relisting the API docs suggest is skipped, as a missed change is followed
+  by the description change anyway.
+- "Searchable now" notice: the saver records each written file in `saver_pending` (only while the server has the
+  listing) keyed by the message it replied to, and `MemesChanged` (fed by `mediacache.Cache.OnFeed`) marks rows
+  ready or failed by base name. One reply per message or album once nothing in it is pending; rows older than 7
+  days are dropped silently (e.g. a folder not registered in meme-search).

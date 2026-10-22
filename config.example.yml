@@ -23,6 +23,7 @@ cache:
   # chat_id:              # CACHE_CHAT_ID, private channel id like -1001234567890; empty = inline off
   # library_dir:          # LIBRARY_DIR, default = saver.dir
   warmup_interval: 6h      # WARMUP_INTERVAL
+  feed_interval: 1m        # FEED_INTERVAL, change feed polling (servers with the meme listing only)
   uploads_per_min: 20      # CACHE_UPLOADS_PER_MIN
   warmup_uploads_per_min: 10   # WARMUP_UPLOADS_PER_MIN
 

@@ -80,7 +80,8 @@ func run(ctx context.Context, environ []string, baseDir string, botOpts ...bot.O
 	if err != nil {
 		return err
 	}
-	media, err := mediacache.New(ctx, cfg.Media, mediacache.Deps{DB: db, API: api, Sender: b, Log: log.With("module", "mediacache")})
+	media, err := mediacache.New(ctx, cfg.Media, mediacache.Deps{DB: db, API: api, Sender: b,
+		Lister: api, Caps: api, Log: log.With("module", "mediacache")})
 	if err != nil {
 		return err
 	}
@@ -93,10 +94,12 @@ func run(ctx context.Context, environ []string, baseDir string, botOpts ...bot.O
 	}
 	modules := []module.Module{srch}
 	if cfg.SaverEnabled {
-		sv, err := saver.New(cfg.Saver, saver.Deps{Permit: acc, Known: media, I18n: bundle, Log: log.With("module", "saver")})
+		sv, err := saver.New(cfg.Saver, saver.Deps{Permit: acc, Known: media, I18n: bundle, DB: db, Caps: api,
+			Log: log.With("module", "saver")})
 		if err != nil {
 			return err
 		}
+		media.OnFeed(sv.MemesChanged)
 		modules = append(modules, sv)
 	}
 	for _, m := range modules {

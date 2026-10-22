@@ -77,7 +77,10 @@ re-enables charging `srch:s:`. Switches to `GET /api/v1/memes/:id/similar` when 
 
 `/settings` and `/memescope` pick tags from `GET /api/v1/tags`; optional "all of these tags" via `tag_match=all`.
 
-### 2.3 Listing and change feed (needs G)
+### 2.3 Listing and change feed (needs G) - done
+
+Done; see `docs/plan.md` implementation notes. Deviation: the notice matches saved files by base name (they end
+in a content hash) instead of storing meme ids, which the folder writer never learns.
 
 - Warmup without filesystem access: enumerate memes via the cursor listing instead of scanning `LIBRARY_DIR`
   (the library lives on another server today). Keep the folder scan for setups that have it.

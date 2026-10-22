@@ -161,6 +161,9 @@ meme-search). Switching an existing setup to nested mode does not move old `tg-*
 as they are.
 New files in a registered folder are indexed on the next rescan and become searchable once their
 description is generated.
+If meme-search has the meme listing (`GET /api/v1/memes`), the bot replies to a saved meme once search can
+find it (or once its description failed), one reply per album. The same change feed lets the bot warm up new
+memes within `FEED_INTERVAL`, and without `LIBRARY_DIR` straight from the API.
 
 Files are written as uid 1000 (the image's default, the same as meme-search's upload folder). If your folder
 belongs to another uid, rebuild the image with `--build-arg APP_UID=<uid>`.
@@ -255,6 +258,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `CACHE_CHAT_ID` | empty | Private cache channel id; empty disables inline mode and warmup |
 | `LIBRARY_DIR` | `SAVE_DIR` | Library root scanned for warmup and file name matching |
 | `WARMUP_INTERVAL` | `6h` | How often the library is rescanned |
+| `FEED_INTERVAL` | `1m` | How often the change feed is polled (servers with the meme listing only) |
 | `CACHE_UPLOADS_PER_MIN` | `20` | All uploads to the cache channel per minute |
 | `WARMUP_UPLOADS_PER_MIN` | `10` | Background warmup uploads per minute, at most the value above |
 | `SAVE_DIR` | `memes/` next to the binary, `/memes` in Docker | Where saved memes go |

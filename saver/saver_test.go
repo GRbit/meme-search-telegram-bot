@@ -39,6 +39,7 @@ type fakeAPI struct {
 	paths     map[string]string // file_id -> file_path override
 	downloads int
 	sent      []string
+	replyTo   []int // reply_parameters.message_id per sent message
 	sentCh    chan string
 }
 
@@ -85,6 +86,12 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(r.URL.Path, "/sendMessage"):
 		text, _ := p["text"].(string)
 		f.sent = append(f.sent, text)
+		rp, _ := p["reply_parameters"].(map[string]any)
+		if raw, ok := p["reply_parameters"].(string); ok { // multipart sends it as JSON text
+			_ = json.Unmarshal([]byte(raw), &rp)
+		}
+		id, _ := rp["message_id"].(float64)
+		f.replyTo = append(f.replyTo, int(id))
 		f.sentCh <- text
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":1,"type":"private"}}}`))
 	default:
@@ -140,6 +147,12 @@ type env struct {
 
 func newEnv(t *testing.T, mutate func(*Config)) *env {
 	t.Helper()
+	return newEnvWith(t, mutate, nil)
+}
+
+// newEnvWith is newEnv with a hook for optional Deps.
+func newEnvWith(t *testing.T, mutate func(*Config), mutateDeps func(*Deps)) *env {
+	t.Helper()
 	api := newFakeAPI(t)
 	dir := filepath.Join(t.TempDir(), "memes")
 	bundle, err := i18n.NewBundle("en", nil, LocaleFS())
@@ -151,8 +164,12 @@ func newEnv(t *testing.T, mutate func(*Config)) *env {
 	if mutate != nil {
 		mutate(&cfg)
 	}
-	m, err := New(cfg, Deps{Permit: fakePermit{1: true}, Known: known, I18n: bundle,
-		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC) }})
+	deps := Deps{Permit: fakePermit{1: true}, Known: known, I18n: bundle,
+		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC) }}
+	if mutateDeps != nil {
+		mutateDeps(&deps)
+	}
+	m, err := New(cfg, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
