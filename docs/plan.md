@@ -278,3 +278,11 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   trusted. `/memescope@otherbot` is ignored. `g:<code>` is parsed anywhere in the query (first one wins) and
   ignored in private searches. `my_chat_member` left/kicked deletes the row; a group upgraded to a supergroup
   keeps working through its code although its chat id changed (the stale row is dropped only by a later "off").
+- Server capabilities (part 2): `memesearch.HTTPClient` probes the optional endpoints at startup and every
+  `WARMUP_INTERVAL` (`Capabilities`, read without blocking through `CapabilitySource`). A 404 from a new route means
+  an older server; for `/memes/:id/similar` only a 404 without the API's `not_found` envelope does, since the route
+  also 404s for an unknown meme. 5xx, 429, 401 and network errors keep the previous value. Search parameters are
+  confirmed from `meta` on every search answer (`Page.Ignored`), so a downgrade is seen at once; the plain `Search`
+  turns an ignored parameter into `ErrUnsupported` rather than return unfiltered memes. The upload probe posts an
+  empty form with `MEME_SEARCH_UPLOAD_TOKEN` (422 = usable, 403 = token lacks `media:write`); nothing is stored. The
+  `Client` interface is unchanged so existing fakes stay valid; new endpoints are `HTTPClient` methods.

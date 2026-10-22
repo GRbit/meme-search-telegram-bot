@@ -1,7 +1,9 @@
-// Package memesearch is a client for meme-search Search API v1.
+// Package memesearch is a client for meme-search Search API v1 and the v2 upload.
 //
-// The contract lives upstream in docs/search-api-openapi.yml. The API is
-// read-only and additive: unknown response fields must be ignored.
+// The contract lives upstream in docs/search-api-openapi.yml and
+// docs/api-v2-openapi.yml. v1 is read-only and additive: unknown response
+// fields must be ignored. Newer endpoints and parameters are optional, since
+// the same bot runs against stock servers: see Capabilities.
 package memesearch
 
 import (
@@ -15,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,10 +28,19 @@ import (
 
 // Limits enforced by the API; requests outside them get 422.
 const (
-	MaxQueryLen = 200
-	MaxLimit    = 20
-	MaxTags     = 10
-	MaxTagLen   = 20
+	MaxQueryLen  = 200
+	MaxLimit     = 20
+	MaxTags      = 10
+	MaxTagLen    = 20
+	MaxFolders   = 10
+	MaxFolderLen = 300
+	MaxOffset    = 200
+	// MaxListLimit caps one ListMemes page.
+	MaxListLimit = 100
+	// MaxUploadFiles caps the files of one Upload request.
+	MaxUploadFiles = 10
+
+	maxCursorLen = 200
 )
 
 // Mode selects the search algorithm.
@@ -38,6 +50,26 @@ type Mode string
 const (
 	ModeVector  Mode = "vector"
 	ModeKeyword Mode = "keyword"
+)
+
+// TagMatch says whether a meme needs any or all of the requested tags.
+type TagMatch string
+
+// Supported tag match values.
+const (
+	TagMatchAny TagMatch = "any"
+	TagMatchAll TagMatch = "all"
+)
+
+// DescriptionStatus tells whether a meme can be found by search yet.
+type DescriptionStatus string
+
+// Description statuses. The server sends no other values; anything unknown is
+// decoded as StatusPending, as the API asks clients to do.
+const (
+	StatusPending DescriptionStatus = "pending"
+	StatusReady   DescriptionStatus = "ready"
+	StatusFailed  DescriptionStatus = "failed"
 )
 
 // Meme is one item of the collection as returned by the API.
@@ -50,15 +82,57 @@ type Meme struct {
 	Tags        []string `json:"tags"`
 	MediaType   string   `json:"media_type"`
 	ContentURL  string   `json:"content_url"`
+	// Folder is the library folder holding the meme, relative to the memes root
+	// ("work/reactions"), never a filesystem path. Empty from older servers.
+	Folder string `json:"folder"`
+	// DescriptionStatus is empty when the server does not report it (older servers).
+	DescriptionStatus DescriptionStatus `json:"description_status"`
 }
 
+// Searchable reports whether the server said the meme has a description and
+// embeddings. An older server never says so.
+func (m Meme) Searchable() bool { return m.DescriptionStatus == StatusReady }
+
 // SearchOptions tune one search request.
+//
+// The zero values of Folders, TagMatch and Offset are not sent at all, so a
+// search without them is the same request an older server always got.
 type SearchOptions struct {
 	Mode  Mode
 	Limit int // 1..MaxLimit
 	// Tags restrict results to memes with any of them (at most MaxTags, each at
 	// most MaxTagLen characters); the server filters before ranking.
 	Tags []string
+	// Folders restrict results to memes in any of these library folders (at
+	// most MaxFolders names of at most MaxFolderLen characters, exactly as
+	// Folders lists them). An older server ignores them: see Page.Ignored.
+	Folders []string
+	// TagMatch TagMatchAll requires every tag; "" and TagMatchAny keep the default.
+	TagMatch TagMatch
+	// Offset skips that many ranked results, 0..MaxOffset.
+	Offset int
+}
+
+// Param names a search parameter an older server may silently ignore.
+type Param string
+
+// Parameters Page.Ignored can report.
+const (
+	ParamFolder   Param = "folder"
+	ParamTagMatch Param = "tag_match"
+	ParamOffset   Param = "offset"
+)
+
+// Page is one search answer with what the server said about it.
+type Page struct {
+	Memes []Meme
+	// NextOffset is the Offset of the next page; 0 on the last page, past
+	// MaxOffset, or when the server does not page.
+	NextOffset int
+	// Ignored lists requested parameters the response meta does not confirm.
+	// An older server ignores unknown parameters, so the memes are then not
+	// filtered (folder, tag_match) or the first page again (offset).
+	Ignored []Param
 }
 
 // Content is the original media of one meme.
@@ -68,6 +142,9 @@ type Content struct {
 }
 
 // Client is the part of the API the bot uses.
+//
+// It covers what every server version has; the newer endpoints are methods of
+// HTTPClient, guarded by Capabilities, so fakes of this interface stay valid.
 type Client interface {
 	Search(ctx context.Context, query string, opts SearchOptions) ([]Meme, error)
 	Meme(ctx context.Context, id int64) (Meme, error)
@@ -79,14 +156,22 @@ type Config struct {
 	URL     string // base URL, e.g. https://memes.example.com
 	Token   string // bearer token with search:read and media:read
 	Timeout time.Duration
+	// UploadToken is a separate media:write token for Upload; empty disables uploads.
+	//
+	// Upstream asks for a separate token per purpose, and a leaked read token
+	// should not be able to write.
+	UploadToken string
 }
 
 // Sentinel errors matched with errors.Is; *APIError unwraps to one of them.
 //
 // ErrBadResponse means a 2xx answer that breaks the v1 contract (missing
 // required field, wrong type, foreign content_url). ErrContentTooLarge means a
-// media body above the client's cap.
+// media body above the client's cap. ErrUnsupported means the server lacks the
+// endpoint or ignored a parameter (an older server); it is joined with the
+// *APIError when there is one, so ErrNotFound matches too.
 var (
+	ErrUnsupported     = errors.New("memesearch: not supported by the server")
 	ErrUnauthorized    = errors.New("memesearch: unauthorized")
 	ErrForbidden       = errors.New("memesearch: forbidden")
 	ErrNotFound        = errors.New("memesearch: not found")
@@ -176,9 +261,12 @@ func (c Config) Validate() error {
 type HTTPClient struct {
 	base            string // scheme://host[/prefix] without trailing slash
 	token           string
+	uploadToken     string
 	hc              *http.Client
 	log             *slog.Logger
 	maxContentBytes int64
+	now             func() time.Time
+	caps            capState
 }
 
 var _ Client = (*HTTPClient)(nil)
@@ -212,20 +300,40 @@ func New(cfg Config, httpClient *http.Client, log *slog.Logger) (*HTTPClient, er
 	return &HTTPClient{
 		base:            u.String(),
 		token:           cfg.Token,
+		uploadToken:     cfg.UploadToken,
 		hc:              httpClient,
 		log:             log,
 		maxContentBytes: MaxContentBytes,
+		now:             time.Now,
 	}, nil
 }
 
 // Search runs a search query.
 //
 // Invalid input is rejected locally with ErrInvalidRequest, without spending
-// a request of the per-token rate limit.
+// a request of the per-token rate limit. A parameter the server ignored fails
+// with ErrUnsupported rather than returning unfiltered memes; use SearchPage to
+// get them anyway.
 func (c *HTTPClient) Search(ctx context.Context, query string, opts SearchOptions) ([]Meme, error) {
-	if err := validateSearch(query, opts); err != nil {
+	page, err := c.SearchPage(ctx, query, opts)
+	if err != nil {
 		return nil, err
 	}
+	if len(page.Ignored) > 0 {
+		return nil, fmt.Errorf("%w: search ignored %v", ErrUnsupported, page.Ignored)
+	}
+	return page.Memes, nil
+}
+
+// SearchPage runs a search query and reports what the server applied.
+//
+// Every answer also updates Capabilities, since meta tells which parameters
+// this server understands.
+func (c *HTTPClient) SearchPage(ctx context.Context, query string, opts SearchOptions) (Page, error) {
+	if err := validateSearch(query, opts); err != nil {
+		return Page{}, err
+	}
+	folders := cleanFolders(opts.Folders)
 	params := url.Values{}
 	params.Set("q", query)
 	if opts.Mode != "" {
@@ -234,6 +342,15 @@ func (c *HTTPClient) Search(ctx context.Context, query string, opts SearchOption
 	params.Set("limit", strconv.Itoa(opts.Limit))
 	for _, t := range opts.Tags {
 		params.Add("tag", t)
+	}
+	for _, f := range folders {
+		params.Add("folder", f)
+	}
+	if opts.TagMatch != "" {
+		params.Set("tag_match", string(opts.TagMatch))
+	}
+	if opts.Offset > 0 {
+		params.Set("offset", strconv.Itoa(opts.Offset))
 	}
 
 	start := time.Now()
@@ -246,17 +363,37 @@ func (c *HTTPClient) Search(ctx context.Context, query string, opts SearchOption
 	if err != nil {
 		c.log.DebugContext(ctx, "memesearch call failed", "method", http.MethodGet, "path", path,
 			"query", query, "mode", string(opts.Mode), "limit", opts.Limit, "tags", opts.Tags,
+			"folders", folders, "tag_match", string(opts.TagMatch), "offset", opts.Offset,
 			"status", status, "duration", time.Since(start), "err", err)
-		return nil, err
+		return Page{}, err
 	}
-	memes := make([]Meme, len(*body.Data))
+	page := Page{Memes: make([]Meme, len(*body.Data)), Ignored: body.ignored(folders, opts)}
 	for i, w := range *body.Data {
-		memes[i] = w.meme()
+		page.Memes[i] = w.meme()
 	}
+	if body.Meta.NextOffset != nil {
+		page.NextOffset = *body.Meta.NextOffset
+	}
+	c.observeSearch(ctx, body.Meta.Folders != nil, body.Meta.TagMatch != nil, body.Meta.Offset != nil)
 	c.log.DebugContext(ctx, "memesearch call", "method", http.MethodGet, "path", path,
 		"query", query, "mode", string(opts.Mode), "limit", opts.Limit, "tags", opts.Tags,
-		"status", status, "duration", time.Since(start), "count", len(memes))
-	return memes, nil
+		"folders", folders, "tag_match", string(opts.TagMatch), "offset", opts.Offset,
+		"status", status, "duration", time.Since(start), "count", len(page.Memes),
+		"next_offset", page.NextOffset, "ignored", page.Ignored)
+	return page, nil
+}
+
+// cleanFolders trims and deduplicates like the server does, so the meta echo
+// can be compared with what was sent.
+func cleanFolders(in []string) []string {
+	var out []string
+	for _, f := range in {
+		f = strings.TrimSpace(f)
+		if !slices.Contains(out, f) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // Meme fetches one meme's metadata.
@@ -309,7 +446,7 @@ func (c *HTTPClient) Content(ctx context.Context, id int64) (Content, error) {
 }
 
 func (c *HTTPClient) content(ctx context.Context, path string) (Content, int, error) {
-	resp, err := c.do(ctx, path, nil, "*/*")
+	resp, err := c.do(ctx, http.MethodGet, path, nil, nil, "", "*/*", c.token)
 	if err != nil {
 		return Content{}, 0, err
 	}
@@ -340,10 +477,15 @@ func (c *HTTPClient) content(ctx context.Context, path string) (Content, int, er
 
 // getJSON returns the HTTP status (0 when no response arrived) and decodes a 2xx body into out.
 func (c *HTTPClient) getJSON(ctx context.Context, path string, params url.Values, out any) (int, error) {
-	resp, err := c.do(ctx, path, params, "application/json")
+	resp, err := c.do(ctx, http.MethodGet, path, params, nil, "", "application/json", c.token)
 	if err != nil {
 		return 0, err
 	}
+	return decodeJSON(resp, path, out)
+}
+
+// decodeJSON closes resp and decodes a 2xx body into out.
+func decodeJSON(resp *http.Response, path string, out any) (int, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return resp.StatusCode, apiError(resp)
@@ -361,20 +503,25 @@ func (c *HTTPClient) getJSON(ctx context.Context, path string, params url.Values
 	return resp.StatusCode, nil
 }
 
-func (c *HTTPClient) do(ctx context.Context, path string, params url.Values, accept string) (*http.Response, error) {
+func (c *HTTPClient) do(ctx context.Context, method, path string, params url.Values, body io.Reader,
+	contentType, accept, token string,
+) (*http.Response, error) {
 	target := c.base + path
 	if len(params) > 0 {
 		target += "?" + params.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	req, err := http.NewRequestWithContext(ctx, method, target, body)
 	if err != nil {
 		return nil, fmt.Errorf("memesearch: build request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", accept)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("memesearch: GET %s: %w", path, err)
+		return nil, fmt.Errorf("memesearch: %s %s: %w", method, path, err)
 	}
 	return resp, nil
 }
@@ -424,6 +571,22 @@ func validateSearch(query string, opts SearchOptions) error {
 			return fmt.Errorf("%w: tag %q is empty or longer than %d characters", ErrInvalidRequest, t, MaxTagLen)
 		}
 	}
+	if len(opts.Folders) > MaxFolders {
+		return fmt.Errorf("%w: %d folders, limit %d", ErrInvalidRequest, len(opts.Folders), MaxFolders)
+	}
+	for _, f := range opts.Folders {
+		if strings.TrimSpace(f) == "" || utf8.RuneCountInString(f) > MaxFolderLen {
+			return fmt.Errorf("%w: folder %q is empty or longer than %d characters", ErrInvalidRequest, f, MaxFolderLen)
+		}
+	}
+	switch opts.TagMatch {
+	case "", TagMatchAny, TagMatchAll:
+	default:
+		return fmt.Errorf("%w: unknown tag_match %q", ErrInvalidRequest, opts.TagMatch)
+	}
+	if opts.Offset < 0 || opts.Offset > MaxOffset {
+		return fmt.Errorf("%w: offset %d outside 0..%d", ErrInvalidRequest, opts.Offset, MaxOffset)
+	}
 	return nil
 }
 
@@ -435,6 +598,9 @@ type wireMeme struct {
 	Tags        *[]string `json:"tags"`
 	MediaType   *string   `json:"media_type"`
 	ContentURL  *string   `json:"content_url"`
+	// Optional fields: older servers omit them.
+	Folder            *string `json:"folder"`
+	DescriptionStatus *string `json:"description_status"`
 }
 
 // validate mirrors the checks of upstream's CLI client, which the shared conformance fixtures target.
@@ -466,6 +632,17 @@ func (w *wireMeme) meme() Meme {
 	if w.Description != nil {
 		m.Description = *w.Description
 	}
+	if w.Folder != nil {
+		m.Folder = *w.Folder
+	}
+	if w.DescriptionStatus != nil {
+		switch st := DescriptionStatus(*w.DescriptionStatus); st {
+		case StatusReady, StatusFailed:
+			m.DescriptionStatus = st
+		default:
+			m.DescriptionStatus = StatusPending
+		}
+	}
 	return m
 }
 
@@ -477,7 +654,42 @@ type searchResponse struct {
 		Tags  *[]string `json:"tags"`
 		Limit *int      `json:"limit"`
 		Count *int      `json:"count"`
+		// Echoes of the newer parameters; older servers omit them.
+		Folders    *[]string `json:"folders"`
+		TagMatch   *string   `json:"tag_match"`
+		Offset     *int      `json:"offset"`
+		NextOffset *int      `json:"next_offset"`
 	} `json:"meta"`
+}
+
+// ignored compares the meta echo with the request. Only values that differ
+// from the old default are checked: an older server searching "any" tag at
+// offset 0 did what was asked.
+func (r *searchResponse) ignored(folders []string, opts SearchOptions) []Param {
+	var out []Param
+	m := r.Meta
+	if len(folders) > 0 && (m.Folders == nil || !sameSet(*m.Folders, folders)) {
+		out = append(out, ParamFolder)
+	}
+	if opts.TagMatch == TagMatchAll && (m.TagMatch == nil || TagMatch(*m.TagMatch) != TagMatchAll) {
+		out = append(out, ParamTagMatch)
+	}
+	if opts.Offset > 0 && (m.Offset == nil || *m.Offset != opts.Offset) {
+		out = append(out, ParamOffset)
+	}
+	return out
+}
+
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, x := range a {
+		if !slices.Contains(b, x) {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *searchResponse) validate() error {
@@ -493,6 +705,10 @@ func (r *searchResponse) validate() error {
 	}
 	if *m.Limit < 1 || *m.Limit > MaxLimit || *m.Count < 0 || *m.Count > MaxLimit {
 		return fmt.Errorf("%w: meta limit or count out of range", ErrBadResponse)
+	}
+	if (m.Offset != nil && (*m.Offset < 0 || *m.Offset > MaxOffset)) ||
+		(m.NextOffset != nil && (*m.NextOffset < 1 || *m.NextOffset > MaxOffset)) {
+		return fmt.Errorf("%w: meta offset or next_offset out of range", ErrBadResponse)
 	}
 	for i := range *r.Data {
 		if err := (*r.Data)[i].validate(); err != nil {
