@@ -37,12 +37,16 @@ everywhere" button that reruns without saved filters. An empty filtered result s
 
 ### 1.4 Inline scope
 
-Inline stays vector. Precedence, most specific first: per-query `#tag`/`dir:` -> group code (1.5) -> the user's
-saved tags and folders -> optional `INLINE_GROUP_SCOPE` default for `chat_type` group/supergroup. Telegram never
-tells a bot which chat an inline query comes from (only `chat_type`), so a group scope can only travel in the
-query text (1.5).
+Inline stays vector. Precedence, most specific first: per-query `#tag`/`dir:` -> the user's saved tags and
+folders -> optional `INLINE_GROUP_SCOPE` default for `chat_type` group/supergroup. Telegram never tells a bot
+which chat an inline query comes from (only `chat_type`); the group code layer (1.5) was removed.
 
-### 1.5 Group scope (after 1.4; owner to confirm the design)
+### 1.5 Group scope (dropped by the owner)
+
+Built, then removed by owner decision: Telegram never says which group an inline query comes from, so the
+scope had to travel as `g:<code>` from a pinned button, which the owner did not want. Inline in groups uses the
+query, the user's `/settings`, then `INLINE_GROUP_SCOPE`. The `search_group_scopes` table is dropped by a new
+migration step; `g:` words are plain query text again.
 
 - A group admin runs `/memescope@bot` in the group (privacy mode needs no change for `/cmd@bot`; the caller is
   checked with `getChatAdministrators`; anonymous admins send as the group itself and count as admins).
@@ -64,25 +68,23 @@ re-enables charging `srch:s:`. Switches to `GET /api/v1/memes/:id/similar` when 
 
 ### 2.1 Folder filter (needs D1 + D2)
 
-Done: capabilities, `/settings` picker, `dir:`, inline and group scope, and mediacache matching by folder plus
-file name, "Only mine" (cmd/bot passes the saver's `FolderFor`), and the `/memescope pick` picker for groups
-(every press is checked against the group's admins).
+Done: capabilities, `/settings` picker, `dir:`, inline and `INLINE_GROUP_SCOPE`, mediacache matching by folder
+plus file name, and "Only mine" (cmd/bot passes the saver's `FolderFor`). The group picker went with 1.5.
 
 - Capability check at startup and every `WARMUP_INTERVAL`: `GET /api/v1/folders` 404 -> older server, folder
   options stay hidden (info log). After every filtered search compare `meta.folders` with what was sent: an
   older server ignores unknown parameters and returns unfiltered results; then warn, tell the user, mark the
   capability off.
 - `/settings` folder picker from `GET /api/v1/folders` (names with counts, paged, cached a few minutes), with
-  "all" and "only mine" (the user's save folder) shortcuts; group scope (1.5) gets the same picker.
+  "all" and "only mine" (the user's save folder) shortcuts.
 - With the `folder` field on memes, mediacache matches library files by folder plus file name and skips the
   SHA-256 download on name collisions.
 
 ### 2.2 Tag picker (needs E)
 
-Done: "Pick tags" in `/settings` and `/memescope pick`, "Any tag"/"All tags" in `/settings`. A group's tags are
-always matched any-of.
+Done: "Pick tags" and "Any tag"/"All tags" in `/settings`. `INLINE_GROUP_SCOPE` tags are always matched any-of.
 
-`/settings` and `/memescope` pick tags from `GET /api/v1/tags`; optional "all of these tags" via `tag_match=all`.
+`/settings` picks tags from `GET /api/v1/tags`; optional "all of these tags" via `tag_match=all`.
 
 ### 2.3 Listing and change feed (needs G) - done
 

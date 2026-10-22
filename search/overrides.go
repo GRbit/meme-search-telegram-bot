@@ -14,7 +14,6 @@ type overrides struct {
 	tags       []string // from #tag
 	folders    []string // from dir:name
 	allFolders bool     // dir:* drops the saved folder scope
-	group      string   // g:<code> of a group scope, lowercased
 }
 
 const dirPrefix = "dir:"
@@ -31,11 +30,6 @@ func parseOverrides(text string) overrides {
 				o.tags = appendNew(o.tags, t)
 				continue
 			}
-		case len(w) > len(groupCodePrefix) && strings.EqualFold(w[:len(groupCodePrefix)], groupCodePrefix):
-			if o.group == "" {
-				o.group = strings.ToLower(w[len(groupCodePrefix):])
-			}
-			continue
 		case len(w) > len(dirPrefix) && strings.EqualFold(w[:len(dirPrefix)], dirPrefix):
 			if name := w[len(dirPrefix):]; name == "*" {
 				o.allFolders = true

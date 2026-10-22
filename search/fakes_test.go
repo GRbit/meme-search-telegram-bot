@@ -573,3 +573,14 @@ func (s *fakeServer) Similar(_ context.Context, id int64, limit int) ([]memesear
 func withServer(s *fakeServer) envOpt {
 	return func(_ *Config, d *Deps) { d.Server = s }
 }
+
+const groupID = -100500
+
+// groupUpdate is a message in a supergroup.
+func groupUpdate(text string, from int64) *models.Update {
+	return &models.Update{Message: &models.Message{
+		ID: 3, Text: text,
+		From: &models.User{ID: from, LanguageCode: "en", Username: "u"},
+		Chat: models.Chat{ID: groupID, Type: models.ChatTypeSupergroup, Title: "Memes fans"},
+	}}
+}

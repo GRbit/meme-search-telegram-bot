@@ -276,7 +276,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   A press searches by the description (first 200 characters) in vector mode within the session's tags and drops
   the source meme from the results. `srch:s:` and `srch:e:` are charged by `Chargeable`, which cannot see sessions:
   a press on an expired session is charged although nothing is searched (rare, 1h TTL).
-- Group scope (tasks 1.5): table `search_group_scopes` (chat id, 6-char code from an alphabet without look-alikes,
+- (Removed later, see "Group scopes removed" below.) Group scope (tasks 1.5): table `search_group_scopes` (chat id, 6-char code from an alphabet without look-alikes,
   tags, folders, set_by, updated_at). `set` and `reset` keep the code so a pinned button never breaks; `off`
   deletes the row and old buttons fall back to personal settings. Admin check: `sender_chat` equal to the group
   (anonymous admins) or a `getChatAdministrators` match; the anonymous-admin placeholder user alone is not
@@ -338,7 +338,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   error or a failed request -> "Could not save". `ErrUnsupported` and `422 invalid_folder` fall back to the folder
   writer, which creates the folder for the owner (or upstream L) to register. No local file means no
   `AddLibraryFile`; the feed warms the meme up.
-- Group picker (tasks 2.1/2.2): `/memescope pick` posts the same pickers as `/settings` over a `pickTarget` (the
+- (Removed later with the group scopes.) Group picker (tasks 2.1/2.2): `/memescope pick` posts the same pickers as `/settings` over a `pickTarget` (the
   group's scope instead of the user's settings). The message is visible to the whole group, so every press runs
   `getChatAdministrators`; non-admin presses get a popup and change nothing. Each toggle saves at once and keeps
   the group's code, so a pinned button never breaks; "Done" removes the buttons. No "Only mine" for groups.
@@ -353,5 +353,12 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   names like `image.png` repeat across folders for different pictures.
 - Command menu: modules may implement `module.Commander`; `module.SetCommands` (called by cmd/bot after
   registering) publishes them with setMyCommands per scope (all private chats, all groups) as a default list
-  plus one per bundle language. Empty scopes are left alone, failures are a Warn. Only search has commands;
-  `/memescope` is listed only with inline mode, `/cancel` never.
+  plus one per bundle language. `SetCommands` owns both scopes: one without commands is cleared with
+  deleteMyCommands (default and every language), so a command no longer offered leaves Telegram's menu; a host
+  with commands of its own passes them as another `Commander`. Failures are a Warn. Only search has commands,
+  all private; `/cancel` is never listed.
+- Group scopes removed (owner decision): Telegram never says which group an inline query comes from, so a
+  per-group scope needed the pinned `g:<code>` button, which the owner did not want. `/memescope`, the group
+  picker, `g:` parsing and the `my_chat_member` cleanup are gone; `g:` words are query text. Released migration
+  steps stay as they are; an appended step drops `search_group_scopes`. Inline in groups: query filters, the
+  user's settings, then `INLINE_GROUP_SCOPE`.

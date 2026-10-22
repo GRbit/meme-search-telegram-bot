@@ -27,7 +27,7 @@ files into a folder meme-search indexes, so for saving the bot must run on the s
   - [5. Prepare the library folder](#5-prepare-the-library-folder)
   - [6. Run it](#6-run-it)
 - [Usage](#usage)
-  - [Group scope](#group-scope)
+  - [Groups](#groups)
   - [Filters](#filters)
 - [Configuration](#configuration)
   - [Limits](#limits)
@@ -203,9 +203,9 @@ docker compose up -d
 Relative defaults (`data/bot.db`, `memes/`, `config.yml`) are resolved next to the binary.
 
 Then open the bot in Telegram and send `/start`. At startup the bot fills Telegram's command menu (typing `/`
-suggests the commands): `/start`, `/help` and `/settings` in private chats, `/memescope` in groups (only with
-inline mode on), in English, Russian and a default list for other languages. If Telegram refuses, the bot logs a
-warning and works without the menu.
+suggests the commands): `/start`, `/help` and `/settings` in private chats, in English, Russian and a default
+list for other languages; the group menu is cleared. If Telegram refuses, the bot logs a warning and works
+without the menu.
 
 ## Usage
 
@@ -239,30 +239,21 @@ warning and works without the menu.
 - "Similar N" under the results searches for memes similar to the N-th meme of that album; it counts as a
   search. Newer meme-search versions compare the meme itself; otherwise, and within tags or folders, the bot
   searches by its description, within the same tags and folders. Memes not described yet have no such button.
-- Inline (`@yourbot query` in any chat) always uses Smart search. Its tags and folders come, each on its own, most specific first, from
-  `#tag` in the query, a group's scope button (below), the user's `/settings`, and for queries typed in groups the
+- Inline (`@yourbot query` in any chat) always uses Smart search. Its tags and folders come, each on its own,
+  most specific first, from the query's filters, the user's `/settings`, and for queries typed in groups the
   `INLINE_GROUP_SCOPE` default.
 
-### Group scope
+### Groups
 
-Telegram does not tell a bot which group an inline query is typed in, so a group's meme scope travels in the
-query. Add the bot to the group (no admin rights and no privacy mode change needed), then a group admin sends:
-
-- `/memescope@yourbot set #reaction #work` (filters only, see [Filters](#filters)). The bot answers with a message
-  whose "Search memes" button types `@yourbot g:<code> ` into the input field; pin that message.
-- `/memescope@yourbot pick` (newer meme-search versions that list tags and folders) posts a message with "Pick
-  tags" and "Folders" buttons to choose from the lists; only admins' presses count. "Done" shows the result.
-- `/memescope@yourbot` shows the scope (anyone), `reset` searches all memes but keeps the button working,
-  `button` posts the button again, `off` removes the scope.
-
-Queries with that code search within the group's tags; typing `@yourbot` by hand uses your own settings. The
-code is not a secret: anyone typing it only changes their own results. Limits are unchanged: whoever types the
-query pays for it. Removing the bot from the group deletes its scope.
+Inline search works in any group: type `@yourbot query` there. The bot does not need to be a member, and it
+answers only the person typing. Telegram never tells a bot which group an inline query comes from, so there is
+no per-group scope: filters come from the query, then the user's own `/settings`, then `INLINE_GROUP_SCOPE`, one
+default for every group.
 
 ### Filters
 
-The same filter words work in four places: a search message in the private chat, an inline query, `/memescope
-set` and the `INLINE_GROUP_SCOPE` setting. Words are separated by spaces and each word is one filter:
+The same filter words work in three places: a search message in the private chat, an inline query, and the
+`INLINE_GROUP_SCOPE` setting. Words are separated by spaces and each word is one filter:
 
 - `#tag`: one tag, repeatable, at most 10 tags of at most 20 characters. A meme matches any of the tags (in a
   search with "All tags" in `/settings`: all of them). A trailing `,` or `;` is dropped. Tags containing spaces
@@ -287,28 +278,28 @@ folders and the bot says so under the results.
 | `dir:work funny` | `funny` | from `/settings` | `work` instead of the saved ones |
 | `dir:Work funny` | `funny` | from `/settings` | `work`, when meme-search lists exactly one folder with that name in any case; otherwise `Work` as typed, which meme-search compares case-sensitively |
 | `dir:work #cat funny` | `funny` | `cat` | `work` |
-| `dir:* funny` | `funny` | from `/settings` | none: all folders (inline: also not the group button's folders) |
+| `dir:* funny` | `funny` | from `/settings` | none: all folders (inline: also not the `INLINE_GROUP_SCOPE` folders) |
 | `dir:* dir:work funny` | `funny` | from `/settings` | `work`: a named folder wins over `dir:*` |
 | `dir:nope funny` | see right | | newer meme-search: not searched, the private chat answers "No folder named nope" and inline shows no results; older versions search all folders |
 | `#cat` or `dir:work` alone | not searched | | the private chat asks for words to search for, inline shows nothing; neither counts against limits |
 
-In an inline query the tags and folders of a group's button (`g:<code>`, below) come between the query's own
-filters and `/settings`; `INLINE_GROUP_SCOPE` comes last.
+Any other word is query text, so `g:abc` (the format of the removed per-group codes) is searched for like any word.
 
-**In a group scope** (`/memescope set ...` and `INLINE_GROUP_SCOPE`) only filters are allowed, there is no query,
-and the tags of a group always match any-of:
+**In `INLINE_GROUP_SCOPE`** only filters are allowed, there is no query, and its tags always match any-of. It is
+used for inline queries typed in groups, per dimension, when neither the query nor the user's `/settings` name
+tags (or folders):
 
-| Value | `/memescope set` | `INLINE_GROUP_SCOPE` |
-|---|---|---|
-| `#reaction #work` | tags `reaction`, `work` | the same |
-| `#reaction, #work` | the same (the `,` is dropped) | the same |
-| `#reaction,#work` | one tag `reaction,#work` (pitfall) | the same |
-| `dir:work/reactions` | folder `work/reactions` | the same |
-| `dir:Work/Reactions` | `work/reactions` when meme-search lists folders and has it (any case); a name it does not list is refused; older versions: kept as written | used as written: must match meme-search exactly, case included |
-| `#reaction dir:work/reactions` | both | both |
-| `dir:*` | refused alone (no filter); ignored next to other filters | no effect |
-| `funny #reaction` | refused, nothing saved: `funny` is not a filter | the bot does not start: configuration error |
-| 11 tags or 11 folders | refused | the bot does not start: configuration error |
+| Value | Applied |
+|---|---|
+| `#reaction #work` | tags `reaction`, `work` |
+| `#reaction, #work` | the same (the `,` is dropped) |
+| `#reaction,#work` | one tag `reaction,#work` (pitfall) |
+| `dir:work/reactions` | folder `work/reactions` |
+| `dir:Work/Reactions` | used as written: must match meme-search exactly, case included |
+| `#reaction dir:work/reactions` | both |
+| `dir:*` | no effect |
+| `funny #reaction` | the bot does not start: configuration error (`funny` is not a filter) |
+| 11 tags or 11 folders | the bot does not start: configuration error |
 
 `INLINE_GROUP_SCOPE` must be quoted in both config files, because `#` starts a comment there:
 

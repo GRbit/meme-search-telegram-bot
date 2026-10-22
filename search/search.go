@@ -269,9 +269,6 @@ func (m *Module) Register(b *bot.Bot) {
 	b.RegisterHandlerMatchFunc(isTextSearch, m.handleText, textMW...)
 	b.RegisterHandlerMatchFunc(isCommand, m.handleCommand)
 	b.RegisterHandlerMatchFunc(isSettingsCommand, m.handleSettingsCommand)
-	// Group admin commands and membership changes never search: no middleware.
-	b.RegisterHandlerMatchFunc(isGroupScopeCommand, m.handleGroupScope)
-	b.RegisterHandlerMatchFunc(isBotRemoved, m.handleBotRemoved)
 	b.RegisterHandlerMatchFunc(isOwnCallback, m.handleCallback, mw...)
 	inline := m.deps.Media.UploadsEnabled()
 	if inline {

@@ -29,7 +29,7 @@ var filterInputs = []struct {
 	{"too many folders", "cat " + manyFilters("dir:", memesearch.MaxFolders+1)},
 	{"folder too long", "cat dir:" + strings.Repeat("d", memesearch.MaxFolderLen+1)},
 	{"tags and folders over", "cat " + manyFilters("#", memesearch.MaxTags+1) + " " + manyFilters("dir:", memesearch.MaxFolders+1)},
-	{"group code only", "g:abcdef"},
+	{"former group code", "g:abcdef"}, // plain query text since group scopes were dropped
 	{"valid", "cat"},
 	{"valid with filters", "cat #a dir:x dir:*"},
 }
@@ -59,27 +59,5 @@ func TestChargeableAgreesWithTheHandlers(t *testing.T) {
 				t.Fatalf("Chargeable = %v, handler searched = %v", got, reached)
 			}
 		})
-	}
-}
-
-// A private search and /memescope set refuse the same typed filters with the
-// same words, tags first when both tags and folders are over the limit.
-func TestSameRefusalForTextAndGroupScope(t *testing.T) {
-	for _, filters := range []string{
-		manyFilters("#", memesearch.MaxTags+1),
-		"#" + strings.Repeat("t", memesearch.MaxTagLen+1),
-		manyFilters("dir:", memesearch.MaxFolders+1),
-		"dir:" + strings.Repeat("d", memesearch.MaxFolderLen+1),
-		manyFilters("#", memesearch.MaxTags+1) + " " + manyFilters("dir:", memesearch.MaxFolders+1),
-	} {
-		api := &fakeAPI{}
-		e := groupEnv(t, api)
-		e.process(textUpdate("cat " + filters))
-		text := e.lastSent(t, "sendMessage").fields["text"]
-		e.process(groupCmd("/memescope@meme_test_bot set "+filters, 8))
-		group := e.lastSent(t, "sendMessage").fields["text"]
-		if text != group || text == "" {
-			t.Errorf("%.40s...: text search says %q, /memescope set says %q", filters, text, group)
-		}
 	}
 }
