@@ -28,6 +28,7 @@ files into a folder meme-search indexes, so for saving the bot must run on the s
   - [6. Run it](#6-run-it)
 - [Usage](#usage)
   - [Group scope](#group-scope)
+  - [Filters](#filters)
 - [Configuration](#configuration)
   - [Limits](#limits)
 - [Troubleshooting](#troubleshooting)
@@ -219,12 +220,8 @@ Then open the bot in Telegram and send `/start`.
   - **Folders** (only when meme-search can list its folders, newer versions) limit search to the chosen library
     folders, at most 10; "Only mine" picks your own save folder, "All folders" drops the limit.
   - **Reset** returns to the defaults. Changing settings never counts against the daily limit.
-- Filters typed into one search replace the saved value of their kind for that search only:
-  - `#tag` (repeatable) searches only memes with any of these tags, e.g. `#cat #dog funny`.
-  - `dir:folder` (repeatable, case does not matter) searches only those folders; `dir:*` ignores the saved
-    folders. A meme-search version without the folder filter searches all folders, and the bot says so.
-  - Words starting with `#` inside a word (`c#`) stay part of the query. A message with filters only is not a
-    search and does not count.
+- Filters typed into one search (`#tag`, `dir:folder`, `dir:*`) replace the saved value of their kind for that
+  search only; see [Filters](#filters) for every case.
 - When a search is not the default one, the message under the results says what applied (e.g. "Search: Words,
   tags: cat"); with tags there is a "Search everywhere" button that repeats the search without them (it counts as
   a search). Applied folders behave like tags. An empty result with tags says so and offers the same button.
@@ -240,7 +237,7 @@ Then open the bot in Telegram and send `/start`.
 Telegram does not tell a bot which group an inline query is typed in, so a group's meme scope travels in the
 query. Add the bot to the group (no admin rights and no privacy mode change needed), then a group admin sends:
 
-- `/memescope@yourbot set #reaction #work` (filters only: `#tag`, `dir:folder`). The bot answers with a message
+- `/memescope@yourbot set #reaction #work` (filters only, see [Filters](#filters)). The bot answers with a message
   whose "Search memes" button types `@yourbot g:<code> ` into the input field; pin that message.
 - `/memescope@yourbot pick` (newer meme-search versions that list tags and folders) posts a message with "Pick
   tags" and "Folders" buttons to choose from the lists; only admins' presses count. "Done" shows the result.
@@ -251,26 +248,72 @@ Queries with that code search within the group's tags; typing `@yourbot` by hand
 code is not a secret: anyone typing it only changes their own results. Limits are unchanged: whoever types the
 query pays for it. Removing the bot from the group deletes its scope.
 
-#### Scope filter syntax
+### Filters
 
-`/memescope set` and the `INLINE_GROUP_SCOPE` setting take the same filters as a search message, without the
-search words:
+The same filter words work in four places: a search message in the private chat, an inline query, `/memescope
+set` and the `INLINE_GROUP_SCOPE` setting. Words are separated by spaces and each word is one filter:
 
-- Filters are separated by spaces; each word is one filter.
-- `#tag` is one tag, repeatable, at most 10 tags of at most 20 characters each. A meme matches any of them. A
-  trailing `,` or `;` is dropped, so `#cat, #dog` is two tags, but `#cat,#dog` is the single tag `cat,#dog`. Tags
-  containing spaces cannot be written here.
-- `dir:folder` is one library folder (the prefix may be written in any case), repeatable, at most 10. Folder names
-  containing spaces are not supported. `/memescope set` checks the names against meme-search's folder list when
-  meme-search can list folders: case does not matter and unknown names are refused. `INLINE_GROUP_SCOPE` uses the
-  names as written, so they must match meme-search exactly, case included.
-- `dir:*` (ignore saved folders) is meant for a single search and does nothing here; `/memescope set dir:*` alone
-  is refused as having no filter.
-- Any other word is an error: `/memescope set` saves nothing and answers with the filter format, and an `INLINE_GROUP_SCOPE`
-  with words in it stops the bot at startup with a configuration error.
+- `#tag`: one tag, repeatable, at most 10 tags of at most 20 characters. A meme matches any of the tags (in a
+  search with "All tags" in `/settings`: all of them). A trailing `,` or `;` is dropped. Tags containing spaces
+  cannot be written this way; in the private chat type them in `/settings` -> "Set tags" as a comma list.
+- `dir:folder`: one library folder, repeatable, at most 10. The `dir:` prefix may be written in any case. Folder
+  names containing spaces are not supported.
+- `dir:*`: ignore the saved folders for this one search.
 
-Example: `/memescope@yourbot set #reaction #work dir:work/reactions`, or `INLINE_GROUP_SCOPE="#reaction #work"`.
-In YAML and `.env` files keep the value in quotes: `#` can start a comment there.
+A `#` inside a word (`c#`) is ordinary text. A meme-search version without the folder filter searches all
+folders and the bot says so under the results.
+
+**In a search message** (private chat or inline), filters change that search only; everything else is the query:
+
+| You type | Query | Tags | Folders |
+|---|---|---|---|
+| `funny cat` | `funny cat` | from `/settings` | from `/settings` |
+| `#cat funny` | `funny` | `cat` instead of the saved ones | from `/settings` |
+| `#cat #dog funny` | `funny` | `cat`, `dog` | from `/settings` |
+| `#cat, #dog funny` | `funny` | `cat`, `dog` (the `,` is dropped) | from `/settings` |
+| `#cat,#dog funny` | `funny` | one tag `cat,#dog`: a pitfall, put a space after the comma | from `/settings` |
+| `c# tips` | `c# tips` | from `/settings` | from `/settings` |
+| `dir:work funny` | `funny` | from `/settings` | `work` instead of the saved ones |
+| `dir:Work funny` | `funny` | from `/settings` | `work`, when meme-search lists exactly one folder with that name in any case; otherwise `Work` as typed, which meme-search compares case-sensitively |
+| `dir:work #cat funny` | `funny` | `cat` | `work` |
+| `dir:* funny` | `funny` | from `/settings` | none: all folders (inline: also not the group button's folders) |
+| `dir:* dir:work funny` | `funny` | from `/settings` | `work`: a named folder wins over `dir:*` |
+| `dir:nope funny` | see right | | newer meme-search: not searched, the private chat answers "No folder named nope" and inline shows no results; older versions search all folders |
+| `#cat` or `dir:work` alone | not searched | | the private chat asks for words to search for, inline shows nothing; neither counts against limits |
+
+In an inline query the tags and folders of a group's button (`g:<code>`, below) come between the query's own
+filters and `/settings`; `INLINE_GROUP_SCOPE` comes last.
+
+**In a group scope** (`/memescope set ...` and `INLINE_GROUP_SCOPE`) only filters are allowed, there is no query,
+and the tags of a group always match any-of:
+
+| Value | `/memescope set` | `INLINE_GROUP_SCOPE` |
+|---|---|---|
+| `#reaction #work` | tags `reaction`, `work` | the same |
+| `#reaction, #work` | the same (the `,` is dropped) | the same |
+| `#reaction,#work` | one tag `reaction,#work` (pitfall) | the same |
+| `dir:work/reactions` | folder `work/reactions` | the same |
+| `dir:Work/Reactions` | `work/reactions` when meme-search lists folders and has it (any case); a name it does not list is refused; older versions: kept as written | used as written: must match meme-search exactly, case included |
+| `#reaction dir:work/reactions` | both | both |
+| `dir:*` | refused alone (no filter); ignored next to other filters | no effect |
+| `funny #reaction` | refused, nothing saved: `funny` is not a filter | the bot does not start: configuration error |
+| 11 tags or 11 folders | refused | the bot does not start: configuration error |
+
+`INLINE_GROUP_SCOPE` must be quoted in both config files, because `#` starts a comment there:
+
+```sh
+# .env for docker compose (.env.local for `make run`)
+INLINE_GROUP_SCOPE="#reaction #work dir:work/reactions"
+```
+
+```yaml
+# config.yml
+search:
+  inline_group_scope: "#reaction #work dir:work/reactions"
+```
+
+Without the quotes the shell and docker compose read ` #work` and the rest as a comment (only `#reaction` is
+left), and in YAML the whole value is a comment.
 
 ## Configuration
 
@@ -288,7 +331,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `RESULTS_PER_PAGE` | `5` | Memes per page in private chat, 1-10 |
 | `SEARCH_MODE` | `vector` | `vector` (semantic) or `keyword` |
 | `INLINE_RESULTS` | `3` | Memes per inline query, 1-20; uncached ones are queued for upload |
-| `INLINE_GROUP_SCOPE` | empty | Default `#tag`/`dir:` filters of inline queries typed in groups, see [Scope filter syntax](#scope-filter-syntax) |
+| `INLINE_GROUP_SCOPE` | empty | Default `#tag`/`dir:` filters of inline queries typed in groups, quoted; see [Filters](#filters) |
 | `INLINE_DEBOUNCE` | `1s` | Inline queries wait this long and are dropped if the user kept typing; at most `5s`, `0` disables |
 | `CACHE_CHAT_ID` | empty | Private cache channel id; empty disables inline mode and warmup |
 | `LIBRARY_DIR` | `SAVE_DIR` | Library root scanned for warmup and file name matching |
