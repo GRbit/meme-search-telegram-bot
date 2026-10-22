@@ -342,7 +342,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   group's scope instead of the user's settings). The message is visible to the whole group, so every press runs
   `getChatAdministrators`; non-admin presses get a popup and change nothing. Each toggle saves at once and keeps
   the group's code, so a pinned button never breaks; "Done" removes the buttons. No "Only mine" for groups.
-- Paging memory has one bound, `PAGE_MEMES` (default 20000 memes, about 10-20 MB): the least recently used search
+- Paging memory has one bound, `RESULTS_MEMORY_LIMIT` (default 20000 memes, about 10-20 MB): the least recently used search
   is evicted first, and a stored search without results (kept for "Search everywhere") counts as one meme, so
   no session count cap is needed.
 - Duplicate results: a result is dropped when a better-ranked one of the same search (earlier pages and offset

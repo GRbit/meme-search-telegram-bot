@@ -335,7 +335,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `MEME_SEARCH_API_TOKEN` | required | API token with `search:read,media:read`; add `media:write` to allow uploads (newer meme-search only) |
 | `MEME_SEARCH_TIMEOUT` | `30s` | Timeout of one API request |
 | `RESULTS_PER_PAGE` | `5` | Memes per page in private chat, 1-10 |
-| `PAGE_MEMES` | `20000` | Memes kept in memory for "More" over all searches, at least 20; the least recently used search goes first. About 0.5-1 KB each, so 20000 is about 10-20 MB |
+| `RESULTS_MEMORY_LIMIT` | `20000` | Memes kept in memory for "More" over all searches together, at least 20; see [Results memory](#results-memory) |
 | `SEARCH_MODE` | `vector` | `vector` (semantic) or `keyword` |
 | `INLINE_RESULTS` | `3` | Memes per inline query, 1-20; uncached ones are queued for upload |
 | `INLINE_GROUP_SCOPE` | empty | Default `#tag`/`dir:` filters of inline queries typed in groups, quoted; see [Filters](#filters) |
@@ -363,6 +363,15 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `DB_PATH` | `data/bot.db` next to the binary, `/data/bot.db` in Docker | SQLite database |
 | `CONFIG_FILE` | `config.yml` next to the binary, `/config/config.yml` in Docker | Optional YAML config (an alternative to environment variables; they override it) |
 | `LOG_LEVEL` | `info` | `debug` logs every API call and user interaction (no tokens) |
+
+#### Results memory
+
+A search fetches 20 results at once and shows them `RESULTS_PER_PAGE` at a time; the rest wait in memory for
+"More" for about an hour. For trusted users and savers, "More" past those 20 fetches 20 more into the same
+search. `RESULTS_MEMORY_LIMIT` caps the memes held this way for all searches together. When it is full, the
+least recently used search is dropped, and its "More" says to search again. A search without results (kept for
+the "Search everywhere" button) counts as one meme. A meme takes about 0.5-1 KB, so the default 20000 holds
+about 1000 recent searches in 10-20 MB; lower it only on very small hosts.
 
 ### Limits
 

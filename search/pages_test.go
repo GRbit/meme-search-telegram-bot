@@ -149,19 +149,19 @@ func TestPageStoreBoundsFromConfig(t *testing.T) {
 	if e.mod.pages.maxMemes != maxStoredMemes {
 		t.Fatalf("zero config: memes = %d", e.mod.pages.maxMemes)
 	}
-	e = newEnv(t, &fakeAPI{}, &fakeMedia{uploads: true}, func(c *Config, _ *Deps) { c.PageMemes = 500 })
+	e = newEnv(t, &fakeAPI{}, &fakeMedia{uploads: true}, func(c *Config, _ *Deps) { c.ResultsMemoryLimit = 500 })
 	if e.mod.pages.maxMemes != 500 {
 		t.Fatalf("custom: memes = %d", e.mod.pages.maxMemes)
 	}
 }
 
 func TestPageBoundsValidate(t *testing.T) {
-	for _, ok := range []Config{{PageMemes: memesearch.MaxLimit}, {PageMemes: 100_000}} {
+	for _, ok := range []Config{{ResultsMemoryLimit: memesearch.MaxLimit}, {ResultsMemoryLimit: 100_000}} {
 		if err := ok.Validate(); err != nil {
 			t.Errorf("%+v: %v", ok, err)
 		}
 	}
-	for _, bad := range []Config{{PageMemes: -1}, {PageMemes: memesearch.MaxLimit - 1}} {
+	for _, bad := range []Config{{ResultsMemoryLimit: -1}, {ResultsMemoryLimit: memesearch.MaxLimit - 1}} {
 		fields, _ := configerr.Fields(bad.Validate())
 		if len(fields) != 1 {
 			t.Errorf("%+v: fields = %+v", bad, fields)

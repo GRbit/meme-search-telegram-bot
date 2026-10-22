@@ -13,7 +13,7 @@ meme_search:
 
 search:
   results_per_page: 5      # RESULTS_PER_PAGE
-  page_memes: 20000        # PAGE_MEMES, memes kept for "More" over all searches (min 20); ~0.5-1 KB each, 20000 = 10-20 MB
+  results_memory_limit: 20000 # RESULTS_MEMORY_LIMIT, memes kept for "More" over all searches (min 20); ~0.5-1 KB each, 20000 = 10-20 MB
   mode: vector             # SEARCH_MODE: vector or keyword
   inline_results: 3        # INLINE_RESULTS, memes per inline query, 1-20
   inline_debounce: 1s      # INLINE_DEBOUNCE, wait for the user to stop typing, max 5s; 0 disables

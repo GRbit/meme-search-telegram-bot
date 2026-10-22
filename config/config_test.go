@@ -63,7 +63,7 @@ func TestDefaults(t *testing.T) {
 	want.Search.Mode = memesearch.ModeVector
 	want.Search.InlineResults = 3
 	want.Search.InlineDebounce = time.Second
-	want.Search.PageMemes = 20000
+	want.Search.ResultsMemoryLimit = 20000
 	want.Media.CacheChatID = 0
 	want.Media.LibraryDir = filepath.Join(exe, "memes")
 	want.Media.WarmupInterval = 6 * time.Hour
@@ -506,14 +506,14 @@ func TestNoSeparateUploadToken(t *testing.T) {
 	}
 }
 
-func TestPageMemes(t *testing.T) {
-	if c := mustLoad(t, env("PAGE_MEMES=500"), t.TempDir()); c.Search.PageMemes != 500 {
-		t.Fatalf("env: memes = %d", c.Search.PageMemes)
+func TestResultsMemoryLimit(t *testing.T) {
+	if c := mustLoad(t, env("RESULTS_MEMORY_LIMIT=500"), t.TempDir()); c.Search.ResultsMemoryLimit != 500 {
+		t.Fatalf("env: memes = %d", c.Search.ResultsMemoryLimit)
 	}
 	if s := mustLoad(t, required(), t.TempDir()).Summary(); strings.Contains(s, "PAGE_SESSIONS") {
 		t.Fatalf("a session cap is still configurable:\n%s", s)
 	}
-	if _, err := Load(env("PAGE_MEMES=10"), t.TempDir()); err == nil || !strings.Contains(err.Error(), "PAGE_MEMES") {
+	if _, err := Load(env("RESULTS_MEMORY_LIMIT=10"), t.TempDir()); err == nil || !strings.Contains(err.Error(), "RESULTS_MEMORY_LIMIT") {
 		t.Fatalf("budget below one fetch: err = %v", err)
 	}
 }

@@ -18,7 +18,7 @@ const (
 	// everywherePrefix reruns a session's query without tags and folders.
 	everywherePrefix = CallbackPrefix + "e:"
 
-	// maxStoredMemes is the default of Config.PageMemes, small enough for a
+	// maxStoredMemes is the default of Config.ResultsMemoryLimit, small enough for a
 	// small VPS: a meme with its description is roughly 0.5-1 KB, so about
 	// 10-20 MB at worst. An evicted session's "More" answers "search again".
 	maxStoredMemes = 20_000
