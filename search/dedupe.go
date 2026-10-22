@@ -7,18 +7,18 @@ import (
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 )
 
-// hashLen is the hex length of the content hash the saver puts into names
-// (the first 20 hex characters of the SHA-256).
-const hashLen = 20
+// minHashLen is the shortest hex run taken as a content hash: the current
+// saver writes the first 20 hex characters of the SHA-256, older ones 32.
+const minHashLen = 20
 
 // contentHash returns the content hash in a file name, lowercased, or "".
 //
-// The hash is a run of exactly 20 hex characters in the base name (without
+// The hash is a run of 20 or more hex characters in the base name (without
 // extension), bounded by the start, the end or a non-hex character. That finds
 // the saver's names (2026-10-18_alice_123_<hash>.jpg), meme-search's clash
-// renames (<...>_<hash>_1700000000.jpg) and other tools' hash names in any case.
-// A longer hex run is not a hash, and a name with two different 20-hex runs
-// has no hash: picking one could hide a different meme.
+// renames (<...>_<hash>_1700000000.jpg) and other tools' hash names in any
+// case. A name with two different such runs has no hash: picking one could
+// hide a different meme.
 func contentHash(filename string) string {
 	stem := filename[:len(filename)-len(path.Ext(filename))]
 	found := ""
@@ -30,7 +30,7 @@ func contentHash(filename string) string {
 			}
 			continue
 		}
-		if start >= 0 && i-start == hashLen {
+		if start >= 0 && i-start >= minHashLen {
 			run := strings.ToLower(stem[start:i])
 			if found != "" && found != run {
 				return ""
@@ -40,6 +40,18 @@ func contentHash(filename string) string {
 		start = -1
 	}
 	return found
+}
+
+// sameContent reports whether two hashes name the same content: savers cut
+// the same SHA-256 to different lengths, so one must be a prefix of the other.
+func sameContent(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	return strings.HasPrefix(b, a)
 }
 
 func isHex(c byte) bool {
@@ -52,13 +64,15 @@ func isHex(c byte) bool {
 // File names alone do not count: generic names (image.png) repeat across
 // folders for different pictures.
 type dupKeys struct {
-	ids    map[int64]bool
-	hashes map[string]bool
+	ids map[int64]bool
+	// hashes groups full hashes by their first minHashLen characters, which
+	// any two hashes of the same content share.
+	hashes map[string][]string
 }
 
 // newDupKeys starts with shown: memes already on screen, or the source of "Similar".
 func newDupKeys(shown ...memesearch.Meme) *dupKeys {
-	k := &dupKeys{ids: map[int64]bool{}, hashes: map[string]bool{}}
+	k := &dupKeys{ids: map[int64]bool{}, hashes: map[string][]string{}}
 	for _, m := range shown {
 		k.add(m)
 	}
@@ -68,17 +82,25 @@ func newDupKeys(shown ...memesearch.Meme) *dupKeys {
 func (k *dupKeys) add(m memesearch.Meme) {
 	k.ids[m.ID] = true
 	if h := contentHash(m.Filename); h != "" {
-		k.hashes[h] = true
+		k.hashes[h[:minHashLen]] = append(k.hashes[h[:minHashLen]], h)
 	}
 }
 
-// seen reports whether m is a meme already shown or has the content hash of one.
+// seen reports whether m is a meme already shown or has the content of one.
 func (k *dupKeys) seen(m memesearch.Meme) bool {
 	if k.ids[m.ID] {
 		return true
 	}
 	h := contentHash(m.Filename)
-	return h != "" && k.hashes[h]
+	if h == "" {
+		return false
+	}
+	for _, other := range k.hashes[h[:minHashLen]] {
+		if sameContent(h, other) {
+			return true
+		}
+	}
+	return false
 }
 
 // filter keeps the first of every group of duplicates (results come best

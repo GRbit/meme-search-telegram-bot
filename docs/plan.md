@@ -346,7 +346,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   is evicted first, and a stored search without results (kept for "Search everywhere") counts as one meme, so
   no session count cap is needed.
 - Duplicate results: a result is dropped when a better-ranked one of the same search (earlier pages and offset
-  fetches included, and the "Similar" source) is the same meme or has the same content hash: a run of exactly 20
-  hex characters in the base name, bounded by non-hex characters or the name's ends, lowercased. A name with no
-  such run or two different ones has no hash. Equal file names alone are not duplicates (owner decision): generic
+  fetches included, and the "Similar" source) is the same meme or has a hash of the same content: a run of 20 or
+  more hex characters in the base name, bounded by non-hex characters or the name's ends, lowercased; two hashes
+  match when one is a prefix of the other (the current saver writes 20 characters of the SHA-256, the owner's
+  older library 32). A name with no such run or two different ones has no hash. Equal file names alone are not duplicates (owner decision): generic
   names like `image.png` repeat across folders for different pictures.

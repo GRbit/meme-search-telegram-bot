@@ -211,11 +211,13 @@ Then open the bot in Telegram and send `/start`.
   "Page 4 of 4+" says more exist. Public users stop at 20.
 - One search shows each picture once: when the same image sits in several library folders, only the best
   ranked copy is shown. A result counts as a copy of one shown earlier in the same search (any page, inline, or
-  the meme "Similar" started from) when both file names carry the same content hash: a run of exactly 20 hex
-  characters (`0-9`, `a-f`, any case) between non-hex characters or the ends of the name. The bot's saver writes
-  such names (`2026-10-18_alice_123_<hash>.jpg`), and they still match after meme-search renames a clash
-  (`..._<hash>_1700000000.jpg`). Names without such a run, with a longer hex run, or with two different 20-hex
-  runs are never treated as copies, and equal file names alone do not count.
+  the meme "Similar" started from) when both file names carry a hash of the same content: a run of 20 or more
+  hex characters (`0-9`, `a-f`, any case) between non-hex characters or the ends of the name. Two hashes match
+  when one starts with the other, because savers cut the same SHA-256 to different lengths: the bot's saver
+  writes 20 characters (`2026-10-18_alice_123_<hash>.jpg`), older ones 32
+  (`2025-09-17_MrSparkline_29376_d4406c88fe9b4d7b263aad57b25a507c.jpg`). Names still match after meme-search
+  renames a clash (`..._<hash>_1700000000.jpg`). Names without such a run, or with two different ones, are never
+  treated as copies, and equal file names alone do not count.
 - `/settings` sets your own search mode and tags, kept until you change them:
   - **Smart** (vector search, the default) finds memes by meaning, also across languages.
   - **Words** (keyword search) finds memes containing any word of the query; memes matching more words come

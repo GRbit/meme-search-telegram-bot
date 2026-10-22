@@ -12,28 +12,56 @@ import (
 
 const hash20 = "0123456789abcdef0123"
 
+// realName is a file from the owner's library: 32 hex, the first 32 of the
+// content's SHA-256, written by an older saver.
+const (
+	real32   = "d4406c88fe9b4d7b263aad57b25a507c"
+	realName = "2025-09-17_MrSparkline_29376_" + real32 + ".jpg"
+)
+
 func TestContentHash(t *testing.T) {
 	const other = "fedcba9876543210fedc"
+	hash64 := strings.Repeat(real32, 2)
 	for name, want := range map[string]string{
-		"2026-10-18_alice_123_" + hash20 + ".jpg":            hash20, // the saver's own layout
+		"2026-10-18_alice_123_" + hash20 + ".jpg": hash20, // the current saver's layout
+		realName: real32, // an older saver's 32-hex names
+		"2026-10-18_alice_123_" + hash64 + ".png":            hash64, // a full SHA-256
 		"2026-10-18_alice_123_" + hash20:                     hash20, // no extension
 		"2026-10-18_alice_123_" + hash20 + "_1700000000.jpg": hash20, // meme-search's clash suffix
-		hash20 + ".jpg":                                  hash20, // the whole name
-		"copy of " + hash20 + " (2).png":                 hash20, // bounded by non-hex characters
-		"2026-10-18_alice_123_0123456789ABCDEF0123.jpg":  hash20, // compared case-insensitively
-		"x" + hash20 + ".jpg":                            hash20, // x is not hex, so it bounds the run
-		"2026-10-18_alice_123_0123456789abcdef012.jpg":   "",     // 19 hex
-		"2026-10-18_alice_123_0123456789abcdef01234.jpg": "",     // 21 hex: a longer run is not a hash
-		"a" + hash20 + ".jpg":                            "",     // a is hex: the run is 21 long
-		hash20 + "_" + other + ".jpg":                    "",     // two different runs: ambiguous
-		hash20 + "_" + hash20 + ".jpg":                   hash20, // the same run twice is one hash
-		"2026-10-18_alice_123.jpg":                       "",     // saved before names had a hash
-		"cat.jpg":                                        "",
-		".jpg":                                           "",
-		"":                                               "",
+		hash20 + ".jpg":                                 hash20,       // the whole name
+		"copy of " + hash20 + " (2).png":                hash20,       // bounded by non-hex characters
+		"2026-10-18_alice_123_0123456789ABCDEF0123.jpg": hash20,       // compared case-insensitively
+		"x" + hash20 + ".jpg":                           hash20,       // x is not hex, so it bounds the run
+		"a" + hash20 + ".jpg":                           "a" + hash20, // a is hex: the run is 21 long
+		"2026-10-18_alice_123_0123456789abcdef012.jpg":  "",           // 19 hex
+		hash20 + "_" + other + ".jpg":                   "",           // two different runs: ambiguous
+		hash20 + "_" + hash20 + ".jpg":                  hash20,       // the same run twice is one hash
+		"2026-10-18_alice_123.jpg":                      "",           // saved before names had a hash
+		"cat.jpg":                                       "",
+		".jpg":                                          "",
+		"":                                              "",
 	} {
 		if got := contentHash(name); got != want {
 			t.Errorf("contentHash(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestSameContent(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		want bool
+	}{
+		{real32, real32[:20], true}, // the same SHA-256, cut by different savers
+		{real32[:20], real32, true},
+		{real32, real32, true},
+		{real32, strings.Repeat(real32, 2), true},
+		{real32[:20], "e" + real32[1:20], false},
+		{real32, real32[:31] + "d", false}, // equal lengths must be equal
+		{"", real32, false},
+	} {
+		if got := sameContent(tc.a, tc.b); got != tc.want {
+			t.Errorf("sameContent(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
 		}
 	}
 }
@@ -62,6 +90,7 @@ func TestDupKeysFilter(t *testing.T) {
 		dropped int
 	}{
 		{"same hash, other names", nil, []memesearch.Meme{named(1, saved("alice")), named(2, saved("bob")), named(3, "dog.jpg")}, []int64{1, 3}, 1},
+		{"older 32-hex name and newer 20-hex name of the same content", nil, []memesearch.Meme{named(1, realName), named(2, "2026-10-18_alice_5_"+real32[:20]+".jpg"), named(3, "2026-10-18_bob_6_"+real32[:19]+"f.jpg")}, []int64{1, 3}, 1},
 		{"same hash, other case and layout", nil, []memesearch.Meme{named(1, saved("alice")), named(2, "0123456789ABCDEF0123.png")}, []int64{1}, 1},
 		{"same file name alone is not a duplicate", nil, []memesearch.Meme{named(1, "cat.jpg"), named(2, "cat.jpg")}, []int64{1, 2}, 0},
 		{"same meme twice", nil, []memesearch.Meme{named(1, "a.jpg"), named(1, "a.jpg")}, []int64{1}, 1},
