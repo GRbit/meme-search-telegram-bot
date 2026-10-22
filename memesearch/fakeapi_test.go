@@ -24,6 +24,8 @@ type fakeAPI struct {
 	old atomic.Bool
 	// failStatus, when non-zero, answers every request with that status.
 	failStatus atomic.Int32
+	// down drops every connection without an answer, like a server still booting.
+	down atomic.Bool
 	// uploadScope false makes POST /api/v2/memes answer 403 like a token without media:write.
 	uploadScope atomic.Bool
 
@@ -86,6 +88,15 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	f.reqs = append(f.reqs, rec)
 	f.mu.Unlock()
 
+	if f.down.Load() {
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				_ = conn.Close()
+				return
+			}
+		}
+		panic(http.ErrAbortHandler)
+	}
 	if s := f.failStatus.Load(); s != 0 {
 		w.WriteHeader(int(s))
 		return

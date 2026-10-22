@@ -9,6 +9,15 @@
 # meme_search service and reaches it as http://meme_search:3000 (the container port, not APP_PORT).
 # Relative paths resolve against the first -f file's directory, i.e. the meme-search directory.
 services:
+  # Adds a healthcheck to upstream's service (Rails' GET /up; the image has curl), so the bot
+  # starts once meme-search answers instead of probing a server that is still booting.
+  meme_search:
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/up > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
   telegram_bot:
     image: ghcr.io/grbit/meme-search-telegram-bot:latest
     container_name: meme_search_telegram_bot
@@ -16,7 +25,8 @@ services:
     environment:
       MEME_SEARCH_URL: http://meme_search:3000
     depends_on:
-      - meme_search
+      meme_search:
+        condition: service_healthy
     volumes:
       - ${MEME_SEARCH_TELEGRAM_BOT_DATA:-./meme_search/telegram-bot}:/data
       # Same host folder upstream mounts to /rails/public/memes. The bot saves into tg-<user>

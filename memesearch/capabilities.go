@@ -41,6 +41,8 @@ var _ CapabilitySource = (*HTTPClient)(nil)
 type capState struct {
 	mu   sync.Mutex
 	caps Capabilities
+	// summarized is set once a probe decided every capability and said so at Info.
+	summarized bool
 }
 
 // Capabilities returns the cached result of the last Probe, updated by every
@@ -72,10 +74,11 @@ func (c *HTTPClient) observeSearch(ctx context.Context, folders, tagMatch, offse
 	c.setCap(ctx, "offset", func(p *Capabilities) *bool { return &p.Offset }, offset)
 }
 
-// observeEndpoint records what a call to an optional endpoint revealed. Errors
-// that say nothing about the route (5xx, 429, 401, network) keep the old value,
-// so a hiccup never hides a feature.
-func (c *HTTPClient) observeEndpoint(ctx context.Context, name string, field func(*Capabilities) *bool, err error) {
+// observeEndpoint records what a call to an optional endpoint revealed and
+// reports whether it decided the capability. Errors that say nothing about the
+// route (5xx, 429, 401, network) keep the old value, so a hiccup never hides a
+// feature.
+func (c *HTTPClient) observeEndpoint(ctx context.Context, name string, field func(*Capabilities) *bool, err error) bool {
 	switch {
 	case err == nil:
 		c.setCap(ctx, name, field, true)
@@ -83,7 +86,9 @@ func (c *HTTPClient) observeEndpoint(ctx context.Context, name string, field fun
 		c.setCap(ctx, name, field, false)
 	default:
 		c.log.DebugContext(ctx, "memesearch capability unchanged", "capability", name, "err", err)
+		return false
 	}
+	return true
 }
 
 // Probe checks every capability now, caches and returns the result.
@@ -94,39 +99,60 @@ func (c *HTTPClient) observeEndpoint(ctx context.Context, name string, field fun
 // which the server rejects before storing anything; 403 means the token lacks
 // media:write.
 func (c *HTTPClient) Probe(ctx context.Context) Capabilities {
+	got, _ := c.probe(ctx)
+	return got
+}
+
+// probe is Probe that also reports whether every capability was decided; an
+// undecided one keeps its old value (false before the first answer).
+func (c *HTTPClient) probe(ctx context.Context) (Capabilities, bool) {
 	c.log.DebugContext(ctx, "memesearch probe start")
 	_, err := c.Folders(ctx)
-	c.observeEndpoint(ctx, "folder_list", func(p *Capabilities) *bool { return &p.FolderList }, err)
+	decided := c.observeEndpoint(ctx, "folder_list", func(p *Capabilities) *bool { return &p.FolderList }, err)
 	_, err = c.Tags(ctx)
-	c.observeEndpoint(ctx, "tag_list", func(p *Capabilities) *bool { return &p.TagList }, err)
+	decided = c.observeEndpoint(ctx, "tag_list", func(p *Capabilities) *bool { return &p.TagList }, err) && decided
 
 	// Any query does: a current server echoes every newer parameter in meta even when unused.
 	similarID := int64(1)
-	if page, err := c.SearchPage(ctx, "a", SearchOptions{Mode: ModeKeyword, Limit: 1}); err == nil && len(page.Memes) > 0 {
+	page, err := c.SearchPage(ctx, "a", SearchOptions{Mode: ModeKeyword, Limit: 1})
+	if err == nil && len(page.Memes) > 0 {
 		similarID = page.Memes[0].ID
 	}
+	// Only an answered search tells the search parameters apart.
+	decided = decided && err == nil
 	_, err = c.ListMemes(ctx, ListOptions{Limit: 1})
-	c.observeEndpoint(ctx, "listing", func(p *Capabilities) *bool { return &p.Listing }, err)
+	decided = c.observeEndpoint(ctx, "listing", func(p *Capabilities) *bool { return &p.Listing }, err) && decided
 	// Similar records the capability itself; a missing meme (JSON 404) still proves the route.
-	_, _ = c.Similar(ctx, similarID, 1)
-	c.probeUpload(ctx)
+	_, err = c.Similar(ctx, similarID, 1)
+	if ev := similarEvidence(err); ev != nil && !errors.Is(ev, ErrUnsupported) {
+		decided = false
+	}
+	decided = c.probeUpload(ctx) && decided
 
 	c.caps.mu.Lock()
-	first := c.caps.caps.CheckedAt.IsZero()
 	c.caps.caps.CheckedAt = c.now()
 	got := c.caps.caps
+	summary := decided && !c.caps.summarized
+	if summary {
+		c.caps.summarized = true
+	}
 	c.caps.mu.Unlock()
-	if first {
+	switch {
+	case summary:
 		// Flips are logged one by one; on an older server nothing flips, so say it once.
 		c.log.InfoContext(ctx, "memesearch capabilities", "folder_list", got.FolderList, "tag_list", got.TagList,
 			"folder_filter", got.FolderFilter, "tag_match", got.TagMatch, "offset", got.Offset,
 			"listing", got.Listing, "similar", got.Similar, "upload", got.Upload)
+	case !decided:
+		// Typical right after start when meme-search is still booting; the
+		// features it lacks stay off until a probe gets through.
+		c.log.WarnContext(ctx, "memesearch capabilities could not be checked yet, will retry", "capabilities", got)
 	}
-	c.log.DebugContext(ctx, "memesearch probe done", "capabilities", got)
-	return got
+	c.log.DebugContext(ctx, "memesearch probe done", "capabilities", got, "decided", decided)
+	return got, decided
 }
 
-func (c *HTTPClient) probeUpload(ctx context.Context) {
+func (c *HTTPClient) probeUpload(ctx context.Context) bool {
 	field := func(p *Capabilities) *bool { return &p.Upload }
 	_, err := c.upload(ctx, nil, UploadOptions{})
 	var apiErr *APIError
@@ -139,14 +165,24 @@ func (c *HTTPClient) probeUpload(ctx context.Context) {
 		c.log.InfoContext(ctx, "memesearch uploads off: the API token lacks the media:write scope")
 		c.setCap(ctx, "upload", field, false)
 	default:
-		c.observeEndpoint(ctx, "upload", field, err)
+		return c.observeEndpoint(ctx, "upload", field, err)
 	}
+	return true
 }
 
 // DefaultProbeInterval applies when WatchCapabilities gets a non-positive interval.
 const DefaultProbeInterval = 6 * time.Hour
 
+// firstRetry is the wait after a probe that could not decide everything,
+// doubled on every further such probe up to the normal interval.
+const firstRetry = time.Minute
+
 // WatchCapabilities probes now and then every interval until ctx ends.
+//
+// A probe that leaves a capability undecided (server down or still booting,
+// 5xx, 429, 401) is retried after 1m, 2m, 4m and so on up to interval: a bot
+// started next to a booting meme-search would otherwise run without its
+// features for a whole interval. A decided probe restores the normal schedule.
 //
 // Downgrades and upgrades of search parameters are also seen between probes,
 // from every search answer; the interval matters for the other endpoints.
@@ -154,15 +190,28 @@ func (c *HTTPClient) WatchCapabilities(ctx context.Context, interval time.Durati
 	if interval <= 0 {
 		interval = DefaultProbeInterval
 	}
-	c.Probe(ctx)
-	t := time.NewTicker(interval)
-	defer t.Stop()
+	retry := firstRetry
 	for {
+		_, decided := c.probe(ctx)
+		wait := interval
+		if decided {
+			retry = firstRetry
+		} else {
+			wait = min(retry, interval)
+			retry = min(retry*2, interval)
+			c.log.DebugContext(ctx, "memesearch probe retry scheduled", "in", wait)
+		}
+		tick, stop := c.after(wait)
 		select {
 		case <-ctx.Done():
+			stop()
 			return
-		case <-t.C:
-			c.Probe(ctx)
+		case <-tick:
 		}
 	}
+}
+
+func afterTimer(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTimer(d)
+	return t.C, func() { t.Stop() }
 }
