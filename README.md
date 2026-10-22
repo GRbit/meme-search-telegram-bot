@@ -234,6 +234,27 @@ Queries with that code search within the group's tags; typing `@yourbot` by hand
 code is not a secret: anyone typing it only changes their own results. Limits are unchanged: whoever types the
 query pays for it. Removing the bot from the group deletes its scope.
 
+#### Scope filter syntax
+
+`/memescope set` and the `INLINE_GROUP_SCOPE` setting take the same filters as a search message, without the
+search words:
+
+- Filters are separated by spaces; each word is one filter.
+- `#tag` is one tag, repeatable, at most 10 tags of at most 20 characters each. A meme matches any of them. A
+  trailing `,` or `;` is dropped, so `#cat, #dog` is two tags, but `#cat,#dog` is the single tag `cat,#dog`. Tags
+  containing spaces cannot be written here.
+- `dir:folder` is one library folder (the prefix may be written in any case), repeatable, at most 10. Folder names
+  containing spaces are not supported. `/memescope set` checks the names against meme-search's folder list when
+  meme-search can list folders: case does not matter and unknown names are refused. `INLINE_GROUP_SCOPE` uses the
+  names as written, so they must match meme-search exactly, case included.
+- `dir:*` (ignore saved folders) is meant for a single search and does nothing here; `/memescope set dir:*` alone
+  is refused as having no filter.
+- Any other word is an error: `/memescope set` saves nothing and answers with the filter format, and an `INLINE_GROUP_SCOPE`
+  with words in it stops the bot at startup with a configuration error.
+
+Example: `/memescope@yourbot set #reaction #work dir:work/reactions`, or `INLINE_GROUP_SCOPE="#reaction #work"`.
+In YAML and `.env` files keep the value in quotes: `#` can start a comment there.
+
 ## Configuration
 
 Settings come from built-in defaults, then an optional YAML file (`CONFIG_FILE`, see
@@ -250,7 +271,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `RESULTS_PER_PAGE` | `5` | Memes per page in private chat, 1-10 |
 | `SEARCH_MODE` | `vector` | `vector` (semantic) or `keyword` |
 | `INLINE_RESULTS` | `3` | Memes per inline query, 1-20; uncached ones are queued for upload |
-| `INLINE_GROUP_SCOPE` | empty | Default `#tag`/`dir:` filters of inline queries typed in groups |
+| `INLINE_GROUP_SCOPE` | empty | Default `#tag`/`dir:` filters of inline queries typed in groups, see [Scope filter syntax](#scope-filter-syntax) |
 | `INLINE_DEBOUNCE` | `1s` | Inline queries wait this long and are dropped if the user kept typing; at most `5s`, `0` disables |
 | `CACHE_CHAT_ID` | empty | Private cache channel id; empty disables inline mode and warmup |
 | `LIBRARY_DIR` | `SAVE_DIR` | Library root scanned for warmup and file name matching |
