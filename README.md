@@ -239,6 +239,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `TELEGRAM_BOT_TOKEN` | required | Bot token from @BotFather |
 | `MEME_SEARCH_URL` | required | Base URL of meme-search, e.g. `http://meme_search:3000` |
 | `MEME_SEARCH_API_TOKEN` | required | API token with `search:read,media:read` |
+| `MEME_SEARCH_UPLOAD_TOKEN` | empty | Separate token with `media:write` for uploads through API v2 (newer meme-search only); empty means no uploads |
 | `MEME_SEARCH_TIMEOUT` | `30s` | Timeout of one API request |
 | `RESULTS_PER_PAGE` | `5` | Memes per page in private chat, 1-10 |
 | `SEARCH_MODE` | `vector` | `vector` (semantic) or `keyword` |

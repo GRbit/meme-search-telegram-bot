@@ -103,6 +103,9 @@ func run(ctx context.Context, environ []string, baseDir string, botOpts ...bot.O
 		m.Register(b)
 	}
 
+	// Same period as the library rescan: both pick up server-side changes, and
+	// search parameters are re-checked on every search answer anyway.
+	go api.WatchCapabilities(ctx, cfg.Media.WarmupInterval)
 	go func() {
 		if err := media.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("media cache stopped", "err", err)
