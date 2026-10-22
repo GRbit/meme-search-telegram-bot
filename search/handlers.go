@@ -149,6 +149,14 @@ func (m *Module) runSearch(ctx context.Context, b *bot.Bot, loc *i18n.Localizer,
 		m.sendText(ctx, b, chat, m.searchError(ctx, loc, user, err, sc.folders), nil)
 		return
 	}
+	m.showResults(ctx, b, loc, user, chat, q, sc, found, exclude)
+}
+
+// showResults stores a session for found and sends page 1; q and sc are what
+// "Search everywhere" and "Similar" rerun.
+func (m *Module) showResults(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64, q string, sc scope,
+	found []memesearch.Meme, exclude int64,
+) {
 	if exclude != 0 {
 		found = slices.DeleteFunc(found, func(mm memesearch.Meme) bool { return mm.ID == exclude })
 	}
@@ -277,10 +285,54 @@ func (m *Module) handleSimilar(ctx context.Context, b *bot.Bot, cq *models.Callb
 		return
 	}
 	m.answerCallback(ctx, b, cq.ID, "")
-	m.log.DebugContext(ctx, "search: similar", "user_id", cq.From.ID, "meme_id", src.ID, "query_len", utf8.RuneCountInString(q))
 	sc := s.scope
 	sc.mode = memesearch.ModeVector
+	if found, done := m.similarByID(ctx, b, loc, cq.From.ID, s.chat, src, sc); done {
+		if found != nil {
+			m.showResults(ctx, b, loc, cq.From.ID, s.chat, q, sc, found, src.ID)
+		}
+		return
+	}
+	m.log.DebugContext(ctx, "search: similar by description", "user_id", cq.From.ID, "meme_id", src.ID,
+		"query_len", utf8.RuneCountInString(q))
 	m.runSearch(ctx, b, loc, cq.From.ID, s.chat, q, sc, src.ID)
+}
+
+// similarByID asks the server for memes similar to src itself, which is exact
+// and costs no re-embedding. done false means: use the description query.
+// done with nil found means the user was already told about an error.
+//
+// The endpoint has no tag or folder filter, so a filtered session keeps the
+// description query, which applies its scope; filtering 20 neighbours
+// locally could leave nothing.
+func (m *Module) similarByID(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64,
+	src memesearch.Meme, sc scope,
+) (found []memesearch.Meme, done bool) {
+	switch {
+	case m.srv == nil || !m.caps().Similar:
+		m.log.DebugContext(ctx, "search: similar by id unavailable", "user_id", user)
+		return nil, false
+	case len(sc.tags) > 0 || len(sc.folders) > 0:
+		m.log.DebugContext(ctx, "search: similar by id skipped, scope is filtered", "user_id", user,
+			"tags", sc.tags, "folders", sc.folders)
+		return nil, false
+	}
+	found, err := m.srv.Similar(ctx, src.ID, memesearch.MaxLimit)
+	switch {
+	case errors.Is(err, memesearch.ErrUnsupported), errors.Is(err, memesearch.ErrNotFound):
+		// An older server (the client turned the capability off) or a meme gone since the search.
+		m.log.DebugContext(ctx, "search: similar by id failed, falling back", "user_id", user, "meme_id", src.ID, "err", err)
+		return nil, false
+	case err != nil:
+		m.sendText(ctx, b, chat, m.searchError(ctx, loc, user, err, nil), nil)
+		return nil, true
+	case len(found) == 0:
+		// No embedding yet; the description may still find something.
+		m.log.DebugContext(ctx, "search: similar by id empty, falling back", "user_id", user, "meme_id", src.ID)
+		return nil, false
+	}
+	m.log.DebugContext(ctx, "search: similar by id", "user_id", user, "meme_id", src.ID, "count", len(found))
+	return found, true
 }
 
 func truncateRunes(s string, n int) string {

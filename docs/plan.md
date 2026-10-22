@@ -300,3 +300,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   applies to the user's own tags, saved or typed as `#tag`, and is offered only with two or more tags on a server
   with `tag_match`. A group's tags and `INLINE_GROUP_SCOPE` stay any-of. An ignored `tag_match` (old server)
   gives a Warn log and a note under the results, like folders.
+- Similar by id (tasks 2.4): "Similar N" calls `GET /api/v1/memes/:id/similar` (limit 20) when the server has it
+  and the session has no tags or folders. It falls back to the description query on an older server, when the
+  meme is gone (404) or has no embedding yet (empty answer), and always for a filtered session. A rate limit is
+  reported as before, not retried as a second request.

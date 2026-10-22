@@ -485,6 +485,10 @@ type fakeServer struct {
 	folderCalls int
 	tags        []memesearch.Tag
 	tagCalls    int
+	// similar answers Similar; similarErr fails it. similarCalls records id and limit.
+	similar      []memesearch.Meme
+	similarErr   error
+	similarCalls [][2]int64
 }
 
 func newServer(api *fakeAPI, folders ...string) *fakeServer {
@@ -537,8 +541,14 @@ func (s *fakeServer) withTags(names ...string) *fakeServer {
 	return s
 }
 
-func (s *fakeServer) Similar(context.Context, int64, int) ([]memesearch.Meme, error) {
-	return nil, memesearch.ErrUnsupported
+func (s *fakeServer) Similar(_ context.Context, id int64, limit int) ([]memesearch.Meme, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.similarCalls = append(s.similarCalls, [2]int64{id, int64(limit)})
+	if s.similarErr != nil {
+		return nil, s.similarErr
+	}
+	return s.similar, nil
 }
 
 func withServer(s *fakeServer) envOpt {

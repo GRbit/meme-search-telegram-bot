@@ -94,6 +94,9 @@ Done for `/settings`: "Pick tags" from the list, "Any tag"/"All tags". `/memesco
 
 ### 2.4 Similar by id (needs H1)
 
+Done, with one deviation: a session with tags or folders keeps the description query, because the endpoint has
+no filters and filtering 20 neighbours locally could leave nothing.
+
 Replace 1.6's description query with `GET /api/v1/memes/:id/similar` (exact, no re-embedding).
 
 ### 2.5 More than 20 results (needs H2)
