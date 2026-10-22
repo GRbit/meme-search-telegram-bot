@@ -355,3 +355,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   registering) publishes them with setMyCommands per scope (all private chats, all groups) as a default list
   plus one per bundle language. Empty scopes are left alone, failures are a Warn. Only search has commands;
   `/memescope` is listed only with inline mode, `/cancel` never.
+- Settings for trusted users only (owner decision): with `search.Deps.Trusted` set (cmd/bot: tier other than
+  public), `/settings`, every settings and picker button and the "Set tags" input answer a public user with a
+  note and change nothing. Their private and inline searches use the config defaults; the saved row is not
+  deleted, so it applies again if the user becomes trusted. Per-query `#tag`/`dir:` filters are unchanged.
+  `/settings` stays in the command menu, which cannot differ per user. A nil `Trusted` keeps settings open to all.

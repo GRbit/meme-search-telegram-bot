@@ -221,7 +221,10 @@ warning and works without the menu.
   (`2025-09-17_MrSparkline_29376_d4406c88fe9b4d7b263aad57b25a507c.jpg`). Names still match after meme-search
   renames a clash (`..._<hash>_1700000000.jpg`). Names without such a run, or with two different ones, are never
   treated as copies, and equal file names alone do not count.
-- `/settings` sets your own search mode and tags, kept until you change them:
+- `/settings` (trusted users and savers only) sets your own search mode, tags and folders, kept until you
+  change them. Public users get a short note instead, and their searches use the defaults; settings they saved
+  while trusted are kept and apply again once they are trusted again. Filters typed into a search work for
+  everyone.
   - **Smart** (vector search, the default) finds memes by meaning, also across languages.
   - **Words** (keyword search) finds memes containing any word of the query; memes matching more words come
     first.

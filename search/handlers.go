@@ -124,7 +124,7 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 		return
 	}
 	o.folders = folders
-	m.runSearch(ctx, b, loc, user, msg.Chat.ID, q, m.privateScope(m.loadPrefs(ctx, user), o), nil)
+	m.runSearch(ctx, b, loc, user, msg.Chat.ID, q, m.privateScope(m.searchPrefs(ctx, user), o), nil)
 }
 
 // runSearch searches q within sc and sends page 1 to chat; text searches and
@@ -453,7 +453,7 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 		if folders, unknown := m.resolveFolders(ctx, o.folders); len(unknown) == 0 {
 			o.folders = folders
 		}
-		sc := m.inlineScope(m.loadPrefs(ctx, user), o, m.inlineGroup(ctx, user, o.group), iq.ChatType)
+		sc := m.inlineScope(m.searchPrefs(ctx, user), o, m.inlineGroup(ctx, user, o.group), iq.ChatType)
 		m.log.DebugContext(ctx, "search: inline scope", "user_id", user, "tags", sc.tags, "folders", sc.folders)
 		found, _, err := m.find(ctx, user, q, &sc, m.cfg.InlineResults, 0)
 		switch {

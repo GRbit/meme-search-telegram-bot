@@ -22,6 +22,9 @@ Today every private chat search is one vector search over the whole library (`SE
   ranking).
 - Exact phrase search is not planned: keyword ranking is good enough.
 
+Later owner decision: `/settings` is for trusted users and savers only (`search.Deps.Trusted`). Public users
+get a note, their saved row is ignored but kept, and their searches use the config defaults.
+
 ### 1.2 Per-query overrides
 
 In the message text, for one search only, overriding the saved value of that dimension: `#tag` (repeatable);

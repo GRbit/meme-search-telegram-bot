@@ -21,17 +21,37 @@ func isSettingsCommand(u *models.Update) bool {
 // isPendingInput matches the tag list a user types after "Set tags". Other
 // commands are not swallowed: /start or /settings still work mid-input.
 func (m *Module) isPendingInput(u *models.Update) bool {
-	if !isPrivateText(u) || !m.inputs.active(u.Message.From.ID, m.now()) {
+	if !isPrivateText(u) || !m.inputs.active(u.Message.From.ID, m.now()) || !m.mayUseSettings(u.Message.From.ID) {
 		return false
 	}
 	cmd := commandName(u.Message.Text)
 	return cmd == "" || cmd == "cancel"
 }
 
+// mayUseSettings reports whether user may open and change /settings.
+func (m *Module) mayUseSettings(user int64) bool {
+	return m.deps.Trusted == nil || m.deps.Trusted(user)
+}
+
+// searchPrefs returns the settings a search of user runs with: none for a
+// public user, whose saved row stays for when the user is trusted again.
+func (m *Module) searchPrefs(ctx context.Context, user int64) prefs {
+	if !m.mayUseSettings(user) {
+		m.log.DebugContext(ctx, "search: saved settings ignored for a public user", "user_id", user)
+		return prefs{}
+	}
+	return m.loadPrefs(ctx, user)
+}
+
 func (m *Module) handleSettingsCommand(ctx context.Context, b *bot.Bot, u *models.Update) {
 	msg := u.Message
-	m.log.DebugContext(ctx, "search: settings opened", "update", "message", "user_id", msg.From.ID)
 	loc := m.deps.I18n.Localizer(msg.From.LanguageCode)
+	if !m.mayUseSettings(msg.From.ID) {
+		m.log.DebugContext(ctx, "search: settings refused, public user", "update", "message", "user_id", msg.From.ID)
+		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.settings_trusted_only", nil), nil)
+		return
+	}
+	m.log.DebugContext(ctx, "search: settings opened", "update", "message", "user_id", msg.From.ID)
 	text, kb := m.settingsView(loc, m.loadPrefs(ctx, msg.From.ID))
 	m.sendText(ctx, b, msg.Chat.ID, text, kb)
 }
@@ -111,6 +131,11 @@ func (m *Module) effectiveMode(p prefs) memesearch.Mode {
 // handleSettingsCallback applies one settings button. Settings changes are
 // free: the access middleware charges only searches.
 func (m *Module) handleSettingsCallback(ctx context.Context, b *bot.Bot, cq *models.CallbackQuery) {
+	if !m.mayUseSettings(cq.From.ID) {
+		m.log.DebugContext(ctx, "search: settings button refused, public user", "user_id", cq.From.ID, "data", cq.Data)
+		m.answerCallback(ctx, b, cq.ID, m.deps.I18n.Localizer(cq.From.LanguageCode).T("search.settings_trusted_only", nil))
+		return
+	}
 	switch {
 	case strings.HasPrefix(cq.Data, folderPrefix):
 		m.handlePicker(ctx, b, cq, m.folderPicker(m.userTarget()))

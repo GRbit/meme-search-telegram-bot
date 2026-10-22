@@ -156,10 +156,12 @@ type Deps struct {
 	// when the user cannot save. Optional: nil hides the "Only mine" shortcut.
 	OwnFolder func(u *models.User) string
 	// Trusted reports whether a user may page past the first memesearch.MaxLimit
-	// results (offset fetches). Optional: nil means everybody may.
+	// results (offset fetches) and use /settings. Optional: nil means everybody may.
 	//
 	// Every fetch is an API request on the shared per-token limit, and paging is
 	// not charged, so a host with a free tier keeps it to one request per search.
+	// Settings are the owner's choice for trusted users only; a public user's
+	// saved settings are ignored, not deleted, so they return with trust.
 	Trusted func(userID int64) bool
 	Media   MediaCache
 	I18n    *i18n.Bundle
