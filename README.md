@@ -254,7 +254,8 @@ query. Add the bot to the group (no admin rights and no privacy mode change need
 - `/memescope@yourbot set #reaction #work` (filters only, see [Filters](#filters)). The bot answers with a message
   whose "Search memes" button types `@yourbot g:<code> ` into the input field; pin that message.
 - `/memescope@yourbot pick` (newer meme-search versions that list tags and folders) posts a message with "Pick
-  tags" and "Folders" buttons to choose from the lists; only admins' presses count. "Done" shows the result.
+  tags" and "Folders" buttons to choose from the lists; only admins' presses count. In "Folders", "All folders"
+  is the same as `dir:*` and picking a folder ends it. "Done" shows the result.
 - `/memescope@yourbot` shows the scope (anyone), `reset` searches all memes but keeps the button working,
   `button` posts the button again, `off` removes the scope.
 
@@ -314,7 +315,7 @@ and the tags of a group always match any-of:
 | `dir:work/reactions` | folder `work/reactions` | the same |
 | `dir:Work/Reactions` | `work/reactions` when meme-search lists folders and has it (any case); a name it does not list is refused; older versions: kept as written | used as written: must match meme-search exactly, case included |
 | `#reaction dir:work/reactions` | both | both |
-| `dir:*` | refused alone (no filter); ignored next to other filters | no effect |
+| `dir:*` | all folders: queries with the group's code send no folder filter, overriding the user's `/settings` folders and `INLINE_GROUP_SCOPE`; works alone too; a named `dir:` next to it wins | no effect |
 | `funny #reaction` | refused, nothing saved: `funny` is not a filter | the bot does not start: configuration error |
 | 11 tags or 11 folders | refused | the bot does not start: configuration error |
 

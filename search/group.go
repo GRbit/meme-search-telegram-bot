@@ -28,6 +28,9 @@ type groupScope struct {
 	code    string
 	tags    []string
 	folders []string
+	// allFolders searches every folder: it beats the user's saved folders and
+	// INLINE_GROUP_SCOPE, which an empty folder list would not.
+	allFolders bool
 }
 
 const (
@@ -49,8 +52,8 @@ func newGroupCode() string {
 func (m *Module) loadGroup(ctx context.Context, where string, arg any) (*groupScope, error) {
 	g := &groupScope{}
 	var tags, folders string
-	err := m.deps.DB.QueryRowContext(ctx, `SELECT chat_id, code, tags, folders FROM search_group_scopes WHERE `+where, arg).
-		Scan(&g.chatID, &g.code, &tags, &folders)
+	err := m.deps.DB.QueryRowContext(ctx, `SELECT chat_id, code, tags, folders, all_folders FROM search_group_scopes WHERE `+where, arg).
+		Scan(&g.chatID, &g.code, &tags, &folders, &g.allFolders)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -76,7 +79,9 @@ func (m *Module) groupByCode(ctx context.Context, code string) (*groupScope, err
 
 // saveGroup stores the scope of chat and returns its code. An existing code is
 // kept, so a pinned button survives every later "set" and "reset".
-func (m *Module) saveGroup(ctx context.Context, chat int64, tags, folders []string, setBy int64) (string, error) {
+// allFolders is stored only without specific folders: the two exclude each other.
+func (m *Module) saveGroup(ctx context.Context, chat int64, tags, folders []string, allFolders bool, setBy int64) (string, error) {
+	allFolders = allFolders && len(folders) == 0
 	tj, err := json.Marshal(nonNil(tags))
 	if err != nil {
 		return "", err
@@ -89,11 +94,11 @@ func (m *Module) saveGroup(ctx context.Context, chat int64, tags, folders []stri
 	// A fresh code can collide with another group's; a few tries make that vanishingly unlikely.
 	for range 5 {
 		err = store.WriteTx(ctx, m.deps.DB, func(tx *sql.Tx) error {
-			return tx.QueryRowContext(ctx, `INSERT INTO search_group_scopes (chat_id, code, tags, folders, set_by, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?)
+			return tx.QueryRowContext(ctx, `INSERT INTO search_group_scopes (chat_id, code, tags, folders, all_folders, set_by, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (chat_id) DO UPDATE SET tags = excluded.tags, folders = excluded.folders,
-					set_by = excluded.set_by, updated_at = excluded.updated_at
-				RETURNING code`, chat, newGroupCode(), string(tj), string(fj), setBy, m.now().Unix()).Scan(&code)
+					all_folders = excluded.all_folders, set_by = excluded.set_by, updated_at = excluded.updated_at
+				RETURNING code`, chat, newGroupCode(), string(tj), string(fj), allFolders, setBy, m.now().Unix()).Scan(&code)
 		})
 		if err == nil {
 			return code, nil
@@ -204,7 +209,7 @@ func (m *Module) handleGroupScope(ctx context.Context, b *bot.Bot, u *models.Upd
 		m.startGroupPick(ctx, b, loc, chat)
 	case "set":
 		o := parseOverrides(rest)
-		if o.query != "" || (len(o.tags) == 0 && len(o.folders) == 0) {
+		if o.query != "" || (len(o.tags) == 0 && len(o.folders) == 0 && !o.allFolders) {
 			reply("search.group_filters_only", map[string]any{"Max": memesearch.MaxTags})
 			return
 		}
@@ -215,9 +220,10 @@ func (m *Module) handleGroupScope(ctx context.Context, b *bot.Bot, u *models.Upd
 			reply(key, data)
 			return
 		}
-		m.setGroupAndPost(ctx, b, loc, chat, o.tags, folders, from)
+		// As in a search, a named folder wins over dir:*.
+		m.setGroupAndPost(ctx, b, loc, chat, o.tags, folders, o.allFolders && len(folders) == 0, from)
 	case "reset":
-		m.setGroupAndPost(ctx, b, loc, chat, nil, nil, from)
+		m.setGroupAndPost(ctx, b, loc, chat, nil, nil, false, from)
 	case "button":
 		g, err := m.groupByChat(ctx, chat)
 		switch {
@@ -240,15 +246,18 @@ func (m *Module) handleGroupScope(ctx context.Context, b *bot.Bot, u *models.Upd
 	}
 }
 
-func (m *Module) setGroupAndPost(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, chat int64, tags, folders []string, by int64) {
-	code, err := m.saveGroup(ctx, chat, tags, folders, by)
+func (m *Module) setGroupAndPost(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, chat int64, tags, folders []string,
+	allFolders bool, by int64,
+) {
+	code, err := m.saveGroup(ctx, chat, tags, folders, allFolders, by)
 	if err != nil {
 		m.log.WarnContext(ctx, "search: save group scope failed", "chat_id", chat, "err", err)
 		m.sendText(ctx, b, chat, loc.T("search.error", nil), nil)
 		return
 	}
-	m.log.DebugContext(ctx, "search: group scope saved", "chat_id", chat, "user_id", by, "tags", tags, "folders", folders)
-	m.postGroupButton(ctx, b, loc, &groupScope{chatID: chat, code: code, tags: tags, folders: folders})
+	m.log.DebugContext(ctx, "search: group scope saved", "chat_id", chat, "user_id", by, "tags", tags, "folders", folders,
+		"all_folders", allFolders)
+	m.postGroupButton(ctx, b, loc, &groupScope{chatID: chat, code: code, tags: tags, folders: folders, allFolders: allFolders})
 }
 
 // postGroupButton posts the message admins pin: its button prefills
@@ -258,10 +267,7 @@ func (m *Module) postGroupButton(ctx context.Context, b *bot.Bot, loc *i18n.Loca
 		m.sendText(ctx, b, g.chatID, loc.T("search.group_inline_off", nil), nil)
 		return
 	}
-	desc := m.describeScope(loc, scope{mode: m.cfg.Mode, tags: g.tags, folders: g.folders})
-	if desc == "" {
-		desc = loc.T("search.group_everything", nil)
-	}
+	desc := m.groupScopeText(loc, prefs{Tags: g.tags, Folders: g.folders, AllFolders: g.allFolders})
 	text := loc.T("search.group_button", map[string]any{"Scope": desc})
 	if len(g.folders) > 0 && !m.caps().FolderFilter {
 		text += "\n" + loc.T("search.folders_unsupported", nil)

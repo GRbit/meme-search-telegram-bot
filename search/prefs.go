@@ -31,6 +31,7 @@ var migrations = []string{
 		updated_at INTEGER NOT NULL
 	)`,
 	`ALTER TABLE search_prefs ADD COLUMN tag_match TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE search_group_scopes ADD COLUMN all_folders INTEGER NOT NULL DEFAULT 0`,
 }
 
 // prefs are one user's saved search settings. Zero values mean the host's
@@ -41,6 +42,10 @@ type prefs struct {
 	Folders []string
 	// TagMatch is "" (any tag) or memesearch.TagMatchAll; it means nothing without tags.
 	TagMatch memesearch.TagMatch
+	// AllFolders carries a group scope's "all folders" choice through the
+	// shared pickers; a user's settings do not store it (no folders already
+	// means all for them).
+	AllFolders bool
 }
 
 func (p prefs) isZero() bool {

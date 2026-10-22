@@ -23,10 +23,10 @@ func (m *Module) groupTarget(chat int64) pickTarget {
 			if err != nil || g == nil {
 				return prefs{}, err
 			}
-			return prefs{Tags: g.tags, Folders: g.folders}, nil
+			return prefs{Tags: g.tags, Folders: g.folders, AllFolders: g.allFolders}, nil
 		},
 		save: func(ctx context.Context, cq *models.CallbackQuery, p prefs) error {
-			_, err := m.saveGroup(ctx, chat, p.Tags, p.Folders, cq.From.ID)
+			_, err := m.saveGroup(ctx, chat, p.Tags, p.Folders, p.AllFolders, cq.From.ID)
 			return err
 		},
 		back: func(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, cq *models.CallbackQuery, p prefs) {
@@ -37,6 +37,14 @@ func (m *Module) groupTarget(chat int64) pickTarget {
 
 func (m *Module) groupScopeText(loc *i18n.Localizer, p prefs) string {
 	desc := m.describeScope(loc, scope{mode: m.cfg.Mode, tags: p.Tags, folders: p.Folders})
+	if p.AllFolders {
+		all := loc.T("search.scope_folders", map[string]any{"Folders": loc.T("search.folders_all", nil)})
+		if desc == "" {
+			desc = all
+		} else {
+			desc += ", " + all
+		}
+	}
 	if desc == "" {
 		desc = loc.T("search.group_everything", nil)
 	}
@@ -76,7 +84,7 @@ func (m *Module) startGroupPick(ctx context.Context, b *bot.Bot, loc *i18n.Local
 	}
 	var p prefs
 	if g != nil {
-		p = prefs{Tags: g.tags, Folders: g.folders}
+		p = prefs{Tags: g.tags, Folders: g.folders, AllFolders: g.allFolders}
 	}
 	text, kb := m.groupPickView(loc, p)
 	m.sendText(ctx, b, chat, text, kb)

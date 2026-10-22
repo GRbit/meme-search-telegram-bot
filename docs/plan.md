@@ -365,3 +365,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   counts), so the group code and `INLINE_GROUP_SCOPE` decide. Over-limit filters are still refused before that,
   because `Chargeable` cannot see tiers and must agree with the handler. Private chats and inline elsewhere are
   unchanged for now.
+- Group "all folders" (owner request): `search_group_scopes.all_folders` (appended migration step) is set by
+  `/memescope set dir:*` (also alone) or "All folders" in the group folder picker, and cleared by choosing
+  specific folders or `reset`. Inline queries with that group's code then send no folder filter, overriding the
+  user's settings and `INLINE_GROUP_SCOPE` (an empty folder list would fall through to them); a typed `dir:` of a
+  trusted user still wins. In `/settings` "All folders" keeps meaning no saved folders.

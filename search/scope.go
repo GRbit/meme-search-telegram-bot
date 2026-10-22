@@ -84,7 +84,7 @@ func isGroupChatType(t string) bool {
 func (m *Module) inlineScope(p prefs, o overrides, g *groupScope, chatType string) scope {
 	layers := []overrides{o}
 	if g != nil {
-		layers = append(layers, overrides{tags: g.tags, folders: g.folders})
+		layers = append(layers, overrides{tags: g.tags, folders: g.folders, allFolders: g.allFolders})
 	}
 	userLayer := len(layers)
 	layers = append(layers, overrides{tags: p.Tags, folders: p.Folders})

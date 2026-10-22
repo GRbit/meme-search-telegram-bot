@@ -68,6 +68,9 @@ type picker struct {
 	// own returns the "Only mine" choice, "" for none; nil means no such button.
 	own    func(u *models.User, items []pickItem) string
 	target pickTarget
+	// clearIsAll makes the clear button an explicit "all" (prefs.AllFolders),
+	// which a group scope stores and a user's settings ignore.
+	clearIsAll bool
 }
 
 func (m *Module) folderPicker(t pickTarget) picker {
@@ -80,8 +83,10 @@ func (m *Module) folderPicker(t pickTarget) picker {
 		kind:   "folders", prefix: t.prefix + "f:", max: memesearch.MaxFolders,
 		titleID: "search.folder_picker", noneID: "search.folders_all", clearID: "search.folder_picker_all",
 		tooManyID: "search.folder_too_many", unavailableID: "search.folders_unavailable",
-		get: func(p prefs) []string { return p.Folders },
-		set: func(p *prefs, v []string) { p.Folders = v },
+		get:        func(p prefs) []string { return p.Folders },
+		clearIsAll: true,
+		// Any choice of folders, "Only mine" included, ends a group's "all folders".
+		set: func(p *prefs, v []string) { p.Folders, p.AllFolders = v, false },
 		items: func(ctx context.Context) ([]pickItem, bool) {
 			list, ok := m.folders(ctx)
 			out := make([]pickItem, len(list))
@@ -253,6 +258,9 @@ func (m *Module) handlePicker(ctx context.Context, b *bot.Bot, cq *models.Callba
 		return
 	}
 	pk.set(&p, chosen)
+	if action == "all" && pk.clearIsAll {
+		p.AllFolders = true
+	}
 	if err := pk.target.save(ctx, cq, p); err != nil {
 		m.log.WarnContext(ctx, "search: save picker selection failed", "user_id", user, "picker", pk.kind, "err", err)
 		m.answerCallback(ctx, b, cq.ID, loc.T("search.error", nil))
