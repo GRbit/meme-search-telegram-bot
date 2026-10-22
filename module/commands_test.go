@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -29,6 +30,7 @@ func (plainModule) Register(*bot.Bot) {}
 
 // setMyCommandsCall is one recorded setMyCommands request.
 type setMyCommandsCall struct {
+	method   string // setMyCommands or deleteMyCommands
 	scope    string // scope type
 	lang     string
 	commands map[string]string // name -> description
@@ -41,14 +43,15 @@ func fakeCommandsAPI(t *testing.T, fail bool) (*bot.Bot, func() []setMyCommandsC
 	var calls []setMyCommandsCall
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if !strings.HasSuffix(r.URL.Path, "/setMyCommands") {
+		method := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		if method != "setMyCommands" && method != "deleteMyCommands" {
 			_, _ = io.WriteString(w, `{"ok":true,"result":true}`)
 			return
 		}
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
 			t.Errorf("form: %v", err)
 		}
-		var c setMyCommandsCall
+		c := setMyCommandsCall{method: method}
 		var scope struct {
 			Type string `json:"type"`
 		}
@@ -101,7 +104,7 @@ func TestSetCommands(t *testing.T) {
 		cmdModule{[]module.Command{
 			{Name: "start", DescriptionID: "t.start", Scope: module.ScopePrivate},
 			{Name: "help", DescriptionID: "t.help", Scope: module.ScopePrivate},
-			{Name: "memescope", DescriptionID: "t.scope", Scope: module.ScopeGroups},
+			{Name: "roll", DescriptionID: "t.scope", Scope: module.ScopeGroups},
 		}},
 	}
 	module.SetCommands(t.Context(), b, testBundle(t), nil, mods...)
@@ -121,7 +124,7 @@ func TestSetCommands(t *testing.T) {
 				t.Errorf("lang %q start = %q, want %q", c.lang, c.commands["start"], want)
 			}
 		case "all_group_chats":
-			if strings.Join(c.order, ",") != "memescope" {
+			if strings.Join(c.order, ",") != "roll" {
 				t.Errorf("group commands = %v", c.order)
 			}
 		default:
@@ -130,16 +133,20 @@ func TestSetCommands(t *testing.T) {
 	}
 }
 
-// Nothing to show means no request: an empty list would also wipe commands
-// another host set for that scope.
-func TestSetCommandsSkipsEmptyScopes(t *testing.T) {
+// A managed scope without commands is cleared: a command a module no longer
+// offers (or a disabled module's) must leave Telegram's menu, which keeps
+// whatever was set last.
+func TestSetCommandsDeletesEmptyScopes(t *testing.T) {
 	b, calls := fakeCommandsAPI(t, false)
 	module.SetCommands(t.Context(), b, testBundle(t), nil, plainModule{},
 		cmdModule{[]module.Command{{Name: "start", DescriptionID: "t.start", Scope: module.ScopePrivate}}})
+	got := map[string][]string{}
 	for _, c := range calls() {
-		if c.scope != "all_private_chats" {
-			t.Fatalf("call for scope %q", c.scope)
-		}
+		got[c.method+" "+c.scope] = append(got[c.method+" "+c.scope], c.lang)
+	}
+	want := []string{"", "en", "ru"}
+	if !slices.Equal(got["setMyCommands all_private_chats"], want) || !slices.Equal(got["deleteMyCommands all_group_chats"], want) || len(got) != 2 {
+		t.Fatalf("calls = %v", got)
 	}
 }
 
@@ -158,13 +165,13 @@ func (h *warnCounter) Handle(context.Context, slog.Record) error {
 func (h *warnCounter) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *warnCounter) WithGroup(string) slog.Handler      { return h }
 
-// A failed setMyCommands only costs the menu: it is logged and startup goes on.
+// A failed setMyCommands or deleteMyCommands only costs the menu: it is logged and startup goes on.
 func TestSetCommandsFailureIsAWarning(t *testing.T) {
 	b, calls := fakeCommandsAPI(t, true)
 	h := &warnCounter{}
 	module.SetCommands(t.Context(), b, testBundle(t), slog.New(h),
 		cmdModule{[]module.Command{{Name: "start", DescriptionID: "t.start", Scope: module.ScopePrivate}}})
-	if len(calls()) != 3 || h.n != 3 {
+	if len(calls()) != 6 || h.n != 6 {
 		t.Fatalf("calls = %d warnings = %d", len(calls()), h.n)
 	}
 }

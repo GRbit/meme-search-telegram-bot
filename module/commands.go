@@ -37,8 +37,10 @@ type Commander interface {
 // bundle. Errors are logged at Warn and never returned: the menu is a
 // convenience, and commands work without it.
 //
-// A scope without commands is left alone rather than cleared, so a host
-// combining these modules with its own can set that scope itself.
+// SetCommands owns the private and group scopes: one without commands is
+// cleared, because Telegram keeps the last list and a command no longer
+// offered would stay in the menu. A host with commands of its own passes them
+// as one more Commander.
 func SetCommands(ctx context.Context, b *bot.Bot, bundle *i18n.Bundle, log *slog.Logger, mods ...Module) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -70,10 +72,16 @@ func SetCommands(ctx context.Context, b *bot.Bot, bundle *i18n.Bundle, log *slog
 	langs := append([]string{""}, bundle.Languages()...)
 	for _, sc := range scopes {
 		cmds := byScope[sc.scope]
-		if len(cmds) == 0 {
-			continue
-		}
 		for _, lang := range langs {
+			if len(cmds) == 0 {
+				_, err := b.DeleteMyCommands(ctx, &bot.DeleteMyCommandsParams{Scope: sc.tg, LanguageCode: lang})
+				if err != nil {
+					log.WarnContext(ctx, "telegram: clear command menu failed", "scope", sc.name, "lang", lang, "err", err)
+					continue
+				}
+				log.DebugContext(ctx, "telegram: command menu cleared", "scope", sc.name, "lang", lang)
+				continue
+			}
 			loc := bundle.Localizer(lang)
 			list := make([]models.BotCommand, len(cmds))
 			for i, c := range cmds {
