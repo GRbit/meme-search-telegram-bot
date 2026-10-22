@@ -94,12 +94,11 @@ func run(ctx context.Context, environ []string, baseDir string, botOpts ...bot.O
 	}
 	modules := []module.Module{srch}
 	if cfg.SaverEnabled {
-		sv, err := saver.New(cfg.Saver, saver.Deps{Permit: acc, Known: media, I18n: bundle, DB: db, Caps: api,
+		sv, err := saver.New(cfg.Saver, saver.Deps{Permit: acc, Known: media, I18n: bundle, Caps: api,
 			Uploader: api, Log: log.With("module", "saver")})
 		if err != nil {
 			return err
 		}
-		media.OnFeed(sv.MemesChanged)
 		modules = append(modules, sv)
 	}
 	for _, m := range modules {

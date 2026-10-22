@@ -15,7 +15,6 @@ import (
 
 	"github.com/grbit/meme-search-telegram-bot/configerr"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
-	"github.com/grbit/meme-search-telegram-bot/store"
 )
 
 // uploadServer fakes POST /api/v2/memes. answer picks the response shape:
@@ -244,27 +243,6 @@ func TestFolderBackendIsDefault(t *testing.T) {
 	}
 	if got := e.ls(t, "tg-alice"); len(got) != 1 {
 		t.Fatalf("files = %v", got)
-	}
-}
-
-func TestAPIBackendSearchableNotice(t *testing.T) {
-	us := newUploadServer(t)
-	db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "bot.db"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	e := newEnvWith(t, func(c *Config) { c.Backend = BackendAPI }, func(d *Deps) {
-		d.Uploader = us.client(t)
-		d.Caps = memesearch.StaticCapabilities{Upload: true, Listing: true}
-		d.DB = db
-	})
-	e.api.files["p"] = []byte("meme")
-	e.send(photoMsg(5, "p"))
-	e.api.reply(t)
-	e.changed(described(savedName(5, "meme"), memesearch.StatusReady))
-	if got := e.api.reply(t); got != "Search finds this meme now." {
-		t.Fatalf("notice = %q", got)
 	}
 }
 

@@ -106,39 +106,16 @@ func (ls *listServer) client(t *testing.T) *memesearch.HTTPClient {
 	return c
 }
 
-type feedLog struct {
-	mu    sync.Mutex
-	pages [][]int64
-}
-
-func (f *feedLog) listen(_ context.Context, ms []memesearch.Meme) {
-	ids := make([]int64, len(ms))
-	for i, m := range ms {
-		ids[i] = m.ID
-	}
-	f.mu.Lock()
-	f.pages = append(f.pages, ids)
-	f.mu.Unlock()
-}
-
-func (f *feedLog) got() [][]int64 {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return slices.Clone(f.pages)
-}
-
 func listed() memesearch.Capabilities { return memesearch.Capabilities{Listing: true} }
 
-// newFeedEnv is newEnv with the feed wired to ls and a listener recording pages.
-func newFeedEnv(t *testing.T, cfg Config, ls *listServer, caps memesearch.Capabilities) (*env, *feedLog) {
+// newFeedEnv is newEnv with the feed wired to ls.
+func newFeedEnv(t *testing.T, cfg Config, ls *listServer, caps memesearch.Capabilities) *env {
 	t.Helper()
 	e := newEnvWith(t, cfg, func(d *Deps) {
 		d.Lister = ls.client(t)
 		d.Caps = memesearch.StaticCapabilities(caps)
 	})
-	fl := &feedLog{}
-	e.c.OnFeed(fl.listen)
-	return e, fl
+	return e
 }
 
 func jpg(id int64, name string) memesearch.Meme {
@@ -150,28 +127,28 @@ func noLibrary(t *testing.T) string { return filepath.Join(t.TempDir(), "not-mou
 func TestFeedWarmsUpFromTheAPIWithoutALibrary(t *testing.T) {
 	ls := newListServer(t, jpg(1, "2026-01-01_a.jpg"),
 		memesearch.Meme{ID: 2, Filename: "anim.gif", MediaType: "image/gif"}, jpg(3, "b.png"))
-	e, fl := newFeedEnv(t, Config{LibraryDir: noLibrary(t), CacheChatID: chatID}, ls, listed())
+	e := newFeedEnv(t, Config{LibraryDir: noLibrary(t), CacheChatID: chatID}, ls, listed())
 	e.api.content[1] = []byte("one")
 	e.api.content[3] = []byte("three")
 	e.run()
 	e.c.pollFeed(t.Context())
-	eventually(t, "two warmup uploads", func() bool { return len(e.sender.sent()) == 2 })
-	for _, m := range []memesearch.Meme{jpg(1, "2026-01-01_a.jpg"), jpg(3, "b.png")} {
-		if _, ok := e.c.Lookup(t.Context(), m); !ok {
-			t.Errorf("meme %d not cached after API warmup", m.ID)
-		}
+	// The fake counts a send before the cache stores its file_id: wait for the store.
+	eventually(t, "both photos cached", func() bool {
+		_, ok1 := e.c.Lookup(t.Context(), jpg(1, "2026-01-01_a.jpg"))
+		_, ok3 := e.c.Lookup(t.Context(), jpg(3, "b.png"))
+		return ok1 && ok3
+	})
+	if n := len(e.sender.sent()); n != 2 {
+		t.Fatalf("uploads = %d, want 2", n)
 	}
 	if n := e.api.calls(); n != 2 {
 		t.Errorf("content downloads = %d, want 2 (the GIF is skipped)", n)
-	}
-	if got := fl.got(); len(got) != 1 || !slices.Equal(got[0], []int64{1, 2, 3}) {
-		t.Errorf("listener pages = %v", got)
 	}
 }
 
 func TestFeedResumesFromTheStoredCursor(t *testing.T) {
 	ls := newListServer(t, jpg(1, "a.jpg"), jpg(2, "b.jpg"), jpg(3, "c.jpg"))
-	e, fl := newFeedEnv(t, Config{}, ls, listed())
+	e := newFeedEnv(t, Config{}, ls, listed())
 	e.c.feedLimit, e.c.feedPages = 1, 2
 
 	e.c.pollFeed(t.Context())
@@ -182,9 +159,6 @@ func TestFeedResumesFromTheStoredCursor(t *testing.T) {
 	e.c.pollFeed(t.Context()) // nothing newer: empty page, no next_cursor
 	if got := ls.seen(); !slices.Equal(got, []string{"", "c1", "c2", "c3"}) {
 		t.Fatalf("cursors = %q", got)
-	}
-	if got := fl.got(); len(got) != 3 || got[2][0] != 3 {
-		t.Fatalf("listener pages = %v, want [1] [2] [3] and no empty page", got)
 	}
 
 	// A restart continues where the last poll ended.
@@ -203,19 +177,19 @@ func TestFeedResumesFromTheStoredCursor(t *testing.T) {
 func TestFeedOnAnOldServer(t *testing.T) {
 	t.Run("capability off: no request", func(t *testing.T) {
 		ls := newListServer(t, jpg(1, "a.jpg"))
-		e, fl := newFeedEnv(t, Config{LibraryDir: noLibrary(t), CacheChatID: chatID}, ls, memesearch.Capabilities{})
+		e := newFeedEnv(t, Config{LibraryDir: noLibrary(t), CacheChatID: chatID}, ls, memesearch.Capabilities{})
 		e.c.pollFeed(t.Context())
-		if got := ls.seen(); len(got) != 0 || len(fl.got()) != 0 {
-			t.Fatalf("requests = %q, pages = %v", got, fl.got())
+		if got := ls.seen(); len(got) != 0 {
+			t.Fatalf("requests = %q", got)
 		}
 	})
 	t.Run("stale capability: 404 is harmless", func(t *testing.T) {
 		ls := newListServer(t, jpg(1, "a.jpg"))
 		ls.old = true
-		e, fl := newFeedEnv(t, Config{LibraryDir: noLibrary(t), CacheChatID: chatID}, ls, listed())
+		e := newFeedEnv(t, Config{LibraryDir: noLibrary(t), CacheChatID: chatID}, ls, listed())
 		e.c.pollFeed(t.Context())
-		if n := e.c.queue.Len(limiter.Background); len(fl.got()) != 0 || n != 0 {
-			t.Fatalf("pages = %v, queued = %d", fl.got(), n)
+		if n := e.c.queue.Len(limiter.Background); n != 0 {
+			t.Fatalf("queued = %d", n)
 		}
 		if cur, err := e.c.feedCursor(t.Context()); err != nil || cur != "" {
 			t.Fatalf("cursor = %q, %v", cur, err)
@@ -225,7 +199,7 @@ func TestFeedOnAnOldServer(t *testing.T) {
 
 func TestFeedInvalidCursorStartsOver(t *testing.T) {
 	ls := newListServer(t, jpg(1, "a.jpg"))
-	e, fl := newFeedEnv(t, Config{}, ls, listed())
+	e := newFeedEnv(t, Config{}, ls, listed())
 	if err := e.c.setFeedCursor(t.Context(), "bogus"); err != nil {
 		t.Fatal(err)
 	}
@@ -234,14 +208,11 @@ func TestFeedInvalidCursorStartsOver(t *testing.T) {
 	if got := ls.seen(); !slices.Equal(got, []string{"bogus", ""}) {
 		t.Fatalf("cursors = %q", got)
 	}
-	if got := fl.got(); len(got) != 1 {
-		t.Fatalf("pages = %v", got)
-	}
 }
 
 func TestFeedWithLibraryRescansForUnknownFiles(t *testing.T) {
 	ls := newListServer(t, jpg(1, "known.jpg"), memesearch.Meme{ID: 2, Filename: "new.gif", MediaType: "image/gif"})
-	e, _ := newFeedEnv(t, Config{CacheChatID: chatID, WarmupInterval: time.Hour}, ls, listed())
+	e := newFeedEnv(t, Config{CacheChatID: chatID, WarmupInterval: time.Hour}, ls, listed())
 	e.file("a/known.jpg", "k")
 	e.runFull()
 	eventually(t, "first scan", func() bool { return e.c.scans.Load() == 1 })
@@ -266,7 +237,7 @@ func TestFeedWithLibraryRescansForUnknownFiles(t *testing.T) {
 
 func TestAPIWarmupRetriesAndForgetsDeletedMemes(t *testing.T) {
 	ls := newListServer(t, jpg(1, "a.jpg"), jpg(2, "gone.jpg"))
-	e, _ := newFeedEnv(t, Config{LibraryDir: noLibrary(t), CacheChatID: chatID}, ls, listed())
+	e := newFeedEnv(t, Config{LibraryDir: noLibrary(t), CacheChatID: chatID}, ls, listed())
 	e.api.content[1] = []byte("one") // 2 was deleted: Content answers 404
 	e.sender.fail = func(n int, _ sent) error {
 		if n == 1 {
@@ -284,9 +255,13 @@ func TestAPIWarmupRetriesAndForgetsDeletedMemes(t *testing.T) {
 	if err := e.c.queueAPIWarmup(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "retried upload", func() bool { return len(e.sender.sent()) == 2 })
-	if _, ok := e.c.Lookup(t.Context(), jpg(1, "a.jpg")); !ok {
-		t.Fatal("meme 1 not cached after retry")
+	// The fake counts a send before the cache stores its file_id: wait for the store.
+	eventually(t, "meme 1 cached after the retry", func() bool {
+		_, ok := e.c.Lookup(t.Context(), jpg(1, "a.jpg"))
+		return ok
+	})
+	if n := len(e.sender.sent()); n != 2 {
+		t.Fatalf("uploads = %d, want 2", n)
 	}
 	if n := e.api.calls(); n != 3 {
 		t.Fatalf("content downloads = %d, want 3 (the deleted meme is not retried)", n)
@@ -295,7 +270,7 @@ func TestAPIWarmupRetriesAndForgetsDeletedMemes(t *testing.T) {
 
 func TestFeedLoopPollsEveryInterval(t *testing.T) {
 	ls := newListServer(t)
-	e, _ := newFeedEnv(t, Config{FeedInterval: time.Minute, WarmupInterval: time.Hour}, ls, listed())
+	e := newFeedEnv(t, Config{FeedInterval: time.Minute, WarmupInterval: time.Hour}, ls, listed())
 	e.runFull()
 	// No poll at startup: the capability probe has not answered yet, and a
 	// poll before the first library scan would ask for a needless rescan.

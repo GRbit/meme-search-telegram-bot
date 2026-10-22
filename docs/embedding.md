@@ -23,8 +23,7 @@ media, _ := mediacache.New(ctx, mediacache.Config{CacheChatID: cacheChat, Librar
 srch, _ := search.New(search.Config{}, search.Deps{API: api, Media: media, I18n: bundle, DB: db, Log: log,
 	Middlewares: []bot.Middleware{acc.Middleware(search.Chargeable)}})
 sv, _ := saver.New(saver.Config{Dir: "/memes"}, saver.Deps{Permit: acc, Known: media, I18n: bundle,
-	DB: db, Caps: api, Uploader: api, Log: log}) // all three optional; Uploader for Backend: saver.BackendAPI
-media.OnFeed(sv.MemesChanged)
+	Caps: api, Uploader: api, Log: log}) // Caps, Uploader: only for Backend: saver.BackendAPI
 
 for _, m := range []module.Module{srch, sv} {
 	m.Register(b)

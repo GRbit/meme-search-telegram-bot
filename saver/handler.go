@@ -56,15 +56,8 @@ func (m *Module) handle(ctx context.Context, b *bot.Bot, u *models.Update) {
 	if msg.MediaGroupID != "" {
 		m.albums.begin(key, albumState{b: b, chatID: msg.Chat.ID, ctx: ctx, lang: msg.From.LanguageCode, replyTo: msg.ID})
 	}
-	out, target := m.process(ctx, b, msg, ref, log)
+	out := m.process(ctx, b, msg, ref, log)
 	log.Debug("saver: result", "outcome", out.String())
-	if out == outSaved {
-		replyTo := msg.ID
-		if msg.MediaGroupID != "" {
-			replyTo = m.albums.replyTo(key)
-		}
-		m.trackSaved(ctx, msg.Chat.ID, replyTo, msg.From.LanguageCode, filepath.Base(target))
-	}
 	if msg.MediaGroupID != "" {
 		m.albums.finish(key, out)
 		return
@@ -127,21 +120,21 @@ func (m *Module) send(ctx context.Context, b *bot.Bot, chatID int64, replyTo int
 	}
 }
 
-func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, ref fileRef, log *slog.Logger) (outcome, string) {
+func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, ref fileRef, log *slog.Logger) outcome {
 	if m.deps.Known != nil {
 		known, err := m.deps.Known.KnownUniqueID(ctx, ref.FileUniqueID)
 		if err != nil {
 			m.log.Warn("saver: unique id lookup failed", "err", err)
 		} else if known {
 			log.Debug("saver: known file_unique_id, skipping download")
-			return outAlready, ""
+			return outAlready
 		}
 	}
 
 	data, filePath, err := m.download(ctx, b, ref)
 	if err != nil {
 		m.log.Warn("saver: download failed", "user_id", msg.From.ID, "message_id", msg.ID, "err", err)
-		return outFailed, ""
+		return outFailed
 	}
 	sum := sha256.Sum256(data)
 	log.Debug("saver: downloaded", "bytes", len(data))
@@ -152,7 +145,7 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 			m.log.Warn("saver: sha256 lookup failed", "err", err)
 		} else if known {
 			log.Debug("saver: known sha256, not writing")
-			return outAlready, ""
+			return outAlready
 		}
 	}
 
@@ -162,8 +155,8 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 	}
 	base := fileBase(date.In(m.cfg.Location), sourceName(msg), msg.ID, sum)
 	ext := pickExt(filePath, ref.MIME)
-	if out, name, done := m.uploadAPI(ctx, msg.From, base+"."+ext, data, log); done {
-		return out, name
+	if out, done := m.uploadAPI(ctx, msg.From, base+"."+ext, data, log); done {
+		return out
 	}
 	folder := m.saveFolder(msg.From)
 	log.Debug("saver: save folder", "mode", string(m.cfg.Mode), "folder", folder)
@@ -181,10 +174,10 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 	switch {
 	case dup:
 		log.Debug("saver: duplicate in save folder", "folder", folder)
-		return outDuplicate, ""
+		return outDuplicate
 	case err != nil:
 		m.log.Warn("saver: write failed", "user_id", msg.From.ID, "folder", folder, "err", err)
-		return outFailed, ""
+		return outFailed
 	}
 	log.Debug("saver: written", "path", target)
 
@@ -193,7 +186,7 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 			m.log.Warn("saver: add library file failed", "path", target, "err", err)
 		}
 	}
-	return outSaved, target
+	return outSaved
 }
 
 func (m *Module) saveFolder(from *models.User) string {
