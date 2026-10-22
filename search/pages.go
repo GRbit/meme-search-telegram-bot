@@ -18,10 +18,12 @@ const (
 	// everywherePrefix reruns a session's query without tags and folders.
 	everywherePrefix = CallbackPrefix + "e:"
 
-	maxSessions = 5000
-	// maxStoredMemes bounds paging memory: a meme with its description is
-	// roughly 0.5-1 KB, so this is about 50-100 MB at worst.
-	maxStoredMemes = 100_000
+	// maxSessions and maxStoredMemes keep paging memory small enough for a
+	// small VPS: a meme with its description is roughly 0.5-1 KB, so the meme
+	// budget is about 10-20 MB at worst. An evicted session's "More" answers
+	// "search again".
+	maxSessions    = 1000
+	maxStoredMemes = 20_000
 )
 
 // session is one search whose results can be paged without calling the API

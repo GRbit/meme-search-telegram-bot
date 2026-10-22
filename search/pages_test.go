@@ -131,3 +131,12 @@ func TestPageStoreMemeBudgetEvictsLeastRecentlyUsed(t *testing.T) {
 		t.Fatalf("after expiry: memes=%d", p.memes())
 	}
 }
+
+// The defaults keep a small VPS safe: at most about 20k memes with their
+// descriptions in memory, over at most 1000 sessions.
+func TestPageStoreDefaults(t *testing.T) {
+	p := newPageStore(time.Hour, maxSessions)
+	if p.max != 1000 || p.maxMemes != 20_000 {
+		t.Fatalf("max sessions = %d, meme budget = %d", p.max, p.maxMemes)
+	}
+}
