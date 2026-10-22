@@ -33,7 +33,11 @@ func (m *Module) uploadAPI(ctx context.Context, from *models.User, name string, 
 	case errors.As(err, &apiErr) && apiErr.Status == http.StatusUnprocessableEntity && apiErr.Code == "invalid_folder":
 		// The API only fills registered folders; writing creates the folder, which
 		// the owner (or meme-search's "include subfolders") registers once.
-		log.Info("saver: save folder not registered in meme-search, writing the file", "folder", folder)
+		if _, seen := m.unregistered.LoadOrStore(folder, true); seen {
+			log.Debug("saver: save folder not registered in meme-search, writing the file", "folder", folder)
+		} else {
+			log.Info("saver: save folder not registered in meme-search, writing the file", "folder", folder)
+		}
 		return 0, "", false
 	case err != nil:
 		// Not the folder writer: without a shared volume the file would land

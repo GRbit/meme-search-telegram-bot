@@ -1,12 +1,15 @@
 package saver
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -285,5 +288,28 @@ func TestAPIBackendNeedsUploaderAndCaps(t *testing.T) {
 	deps.Uploader, deps.Caps = nil, nil
 	if _, err := New(Config{Dir: t.TempDir(), Backend: BackendAPI}, deps); err == nil {
 		t.Fatal("New accepted the API backend without an uploader")
+	}
+}
+
+// The owner may take a while to register a folder; one Info line per folder is
+// enough, later saves into it log at Debug.
+func TestUnregisteredFolderLoggedOncePerFolder(t *testing.T) {
+	us := newUploadServer(t)
+	us.answer = "invalid_folder"
+	var buf bytes.Buffer
+	e := apiEnv(t, us, canUpload, nil)
+	e.mod.log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	e.mod.deps.Permit = fakePermit{1: true, 2: true}
+	e.api.files["a"] = []byte("a")
+	e.api.files["b"] = []byte("b")
+	e.api.files["c"] = []byte("c")
+	e.send(photoMsg(1, "a"))
+	e.api.reply(t)
+	e.send(photoMsg(2, "b"))
+	e.api.reply(t)
+	e.send(bobMsg(3, "c"))
+	e.api.reply(t)
+	if n := strings.Count(buf.String(), "not registered"); n != 2 {
+		t.Fatalf("info lines = %d, want one per folder (tg-alice, tg-bob):\n%s", n, buf.String())
 	}
 }

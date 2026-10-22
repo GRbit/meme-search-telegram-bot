@@ -179,6 +179,9 @@ type Module struct {
 	httpc  *http.Client
 	// bot is the one Register got; MemesChanged runs outside any update.
 	bot atomic.Pointer[bot.Bot]
+	// unregistered holds folders the upload API refused, so the owner sees one
+	// Info line per folder until it is registered, not one per save.
+	unregistered sync.Map
 	// downloadTimeout bounds getFile plus the download: an album reply waits for
 	// every item, so one stalled connection must not hold it forever.
 	downloadTimeout time.Duration
