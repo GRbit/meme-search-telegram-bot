@@ -370,3 +370,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   specific folders or `reset`. Inline queries with that group's code then send no folder filter, overriding the
   user's settings and `INLINE_GROUP_SCOPE` (an empty folder list would fall through to them); a typed `dir:` of a
   trusted user still wins. In `/settings` "All folders" keeps meaning no saved folders.
+- Group commands (owner request): each `/memescope` subcommand is also its own command (`/memescope_set`,
+  `_pick`, `_reset`, `_button`, `_off`) so the groups command menu can list them with descriptions; the same
+  handler, admin checks and `@bot` addressing apply. `/memescope set ...` stays as an alias, and the usage,
+  no-scope and filter-format replies name the new commands.

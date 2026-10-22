@@ -13,7 +13,11 @@ func (m *Module) Commands() []module.Command {
 		{Name: "settings", DescriptionID: "search.cmd_settings", Scope: module.ScopePrivate},
 	}
 	if m.deps.Media.UploadsEnabled() {
-		cmds = append(cmds, module.Command{Name: "memescope", DescriptionID: "search.cmd_memescope", Scope: module.ScopeGroups})
+		cmds = append(cmds, module.Command{Name: groupCommand, DescriptionID: "search.cmd_memescope", Scope: module.ScopeGroups})
+		for _, sub := range groupSubcommands {
+			cmds = append(cmds, module.Command{Name: groupCommand + "_" + sub, DescriptionID: "search.cmd_memescope_" + sub,
+				Scope: module.ScopeGroups})
+		}
 	}
 	return cmds
 }

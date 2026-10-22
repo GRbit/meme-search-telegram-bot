@@ -739,6 +739,9 @@ func TestCommandsForTheMenu(t *testing.T) {
 	want := []string{
 		fmt.Sprintf("start/%d", module.ScopePrivate), fmt.Sprintf("help/%d", module.ScopePrivate),
 		fmt.Sprintf("settings/%d", module.ScopePrivate), fmt.Sprintf("memescope/%d", module.ScopeGroups),
+		fmt.Sprintf("memescope_set/%d", module.ScopeGroups), fmt.Sprintf("memescope_pick/%d", module.ScopeGroups),
+		fmt.Sprintf("memescope_reset/%d", module.ScopeGroups), fmt.Sprintf("memescope_button/%d", module.ScopeGroups),
+		fmt.Sprintf("memescope_off/%d", module.ScopeGroups),
 	}
 	if !slices.Equal(names(withInline), want) {
 		t.Fatalf("commands = %v", names(withInline))

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/go-telegram/bot"
@@ -114,9 +115,29 @@ func (m *Module) deleteGroup(ctx context.Context, chat int64) error {
 	})
 }
 
+// groupSubcommands also exist as commands of their own ("/memescope_set"),
+// which Telegram's menu can list; "/memescope set" stays an alias.
+var groupSubcommands = []string{"set", "pick", "reset", "button", "off"}
+
+const groupCommand = "memescope"
+
+// groupSubcommand maps a command name to its subcommand: "" for /memescope
+// itself, ok false for anything else.
+func groupSubcommand(name string) (sub string, ok bool) {
+	if name == groupCommand {
+		return "", true
+	}
+	sub, found := strings.CutPrefix(name, groupCommand+"_")
+	return sub, found && slices.Contains(groupSubcommands, sub)
+}
+
 func isGroupScopeCommand(u *models.Update) bool {
 	msg := u.Message
-	return msg != nil && msg.Text != "" && isGroupChatType(string(msg.Chat.Type)) && commandName(msg.Text) == "memescope"
+	if msg == nil || msg.Text == "" || !isGroupChatType(string(msg.Chat.Type)) {
+		return false
+	}
+	_, ok := groupSubcommand(commandName(msg.Text))
+	return ok
 }
 
 // isBotRemoved matches the bot leaving or being kicked from a chat.
@@ -168,8 +189,12 @@ func (m *Module) handleGroupScope(ctx context.Context, b *bot.Bot, u *models.Upd
 	}
 	loc := m.deps.I18n.Localizer(lang)
 	_, args, _ := strings.Cut(strings.TrimSpace(msg.Text), " ")
-	sub, rest, _ := strings.Cut(strings.TrimSpace(args), " ")
-	sub = strings.ToLower(sub)
+	sub, _ := groupSubcommand(commandName(msg.Text))
+	rest := strings.TrimSpace(args)
+	if sub == "" {
+		sub, rest, _ = strings.Cut(rest, " ")
+		sub = strings.ToLower(sub)
+	}
 	m.log.DebugContext(ctx, "search: group scope command", "update", "message", "chat_id", chat, "user_id", from,
 		"sub", sub)
 	reply := func(key string, data map[string]any) { m.sendText(ctx, b, chat, loc.T(key, data), nil) }

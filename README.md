@@ -203,8 +203,8 @@ docker compose up -d
 Relative defaults (`data/bot.db`, `memes/`, `config.yml`) are resolved next to the binary.
 
 Then open the bot in Telegram and send `/start`. At startup the bot fills Telegram's command menu (typing `/`
-suggests the commands): `/start`, `/help` and `/settings` in private chats, `/memescope` in groups (only with
-inline mode on), in English, Russian and a default list for other languages. If Telegram refuses, the bot logs a
+suggests the commands): `/start`, `/help` and `/settings` in private chats, `/memescope` and its
+`/memescope_...` commands in groups (only with inline mode on), in English, Russian and a default list for other languages. If Telegram refuses, the bot logs a
 warning and works without the menu.
 
 ## Usage
@@ -251,13 +251,16 @@ warning and works without the menu.
 Telegram does not tell a bot which group an inline query is typed in, so a group's meme scope travels in the
 query. Add the bot to the group (no admin rights and no privacy mode change needed), then a group admin sends:
 
-- `/memescope@yourbot set #reaction #work` (filters only, see [Filters](#filters)). The bot answers with a message
+- `/memescope_set #reaction #work` (filters only, see [Filters](#filters)). The bot answers with a message
   whose "Search memes" button types `@yourbot g:<code> ` into the input field; pin that message.
-- `/memescope@yourbot pick` (newer meme-search versions that list tags and folders) posts a message with "Pick
-  tags" and "Folders" buttons to choose from the lists; only admins' presses count. In "Folders", "All folders"
-  is the same as `dir:*` and picking a folder ends it. "Done" shows the result.
-- `/memescope@yourbot` shows the scope (anyone), `reset` searches all memes but keeps the button working,
-  `button` posts the button again, `off` removes the scope.
+- `/memescope_pick` (newer meme-search versions that list tags and folders) posts a message with "Pick tags" and
+  "Folders" buttons to choose from the lists; only admins' presses count. In "Folders", "All folders" is the
+  same as `dir:*` and picking a folder ends it. "Done" shows the result.
+- `/memescope` shows the scope (anyone), `/memescope_reset` searches all memes but keeps the button working,
+  `/memescope_button` posts the button again, `/memescope_off` removes the scope.
+
+All of them are in the group's command menu (type `/`). Address them as `/memescope_set@yourbot` when the group
+has several bots. The older form with a space, `/memescope set ...`, `/memescope pick` and so on, still works.
 
 Queries with that code search within the group's tags; typing `@yourbot` by hand uses your own settings. The
 code is not a secret: anyone typing it only changes their own results. Limits are unchanged: whoever types the
@@ -265,8 +268,8 @@ query pays for it. Removing the bot from the group deletes its scope.
 
 ### Filters
 
-The same filter words work in four places: a search message in the private chat, an inline query, `/memescope
-set` and the `INLINE_GROUP_SCOPE` setting. Words are separated by spaces and each word is one filter:
+The same filter words work in four places: a search message in the private chat, an inline query,
+`/memescope_set` and the `INLINE_GROUP_SCOPE` setting. Words are separated by spaces and each word is one filter:
 
 - `#tag`: one tag, repeatable, at most 10 tags of at most 20 characters. A meme matches any of the tags (in a
   search with "All tags" in `/settings`: all of them). A trailing `,` or `;` is dropped. Tags containing spaces
@@ -304,10 +307,10 @@ Public users (neither trusted nor savers) cannot filter inline queries typed in 
 `INLINE_GROUP_SCOPE` decide. `#dog funny` searches `funny` within the group's scope; `#dog` alone is not a search
 and costs nothing. In private chats, and inline outside groups, their filters work as for everyone.
 
-**In a group scope** (`/memescope set ...` and `INLINE_GROUP_SCOPE`) only filters are allowed, there is no query,
+**In a group scope** (`/memescope_set ...` and `INLINE_GROUP_SCOPE`) only filters are allowed, there is no query,
 and the tags of a group always match any-of:
 
-| Value | `/memescope set` | `INLINE_GROUP_SCOPE` |
+| Value | `/memescope_set` | `INLINE_GROUP_SCOPE` |
 |---|---|---|
 | `#reaction #work` | tags `reaction`, `work` | the same |
 | `#reaction, #work` | the same (the `,` is dropped) | the same |
