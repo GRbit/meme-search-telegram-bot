@@ -69,3 +69,7 @@ search.group_pick: "Meme scope for this group: {{.Scope}}. Pick tags or folders;
 search.group_pick_done: "Done"
 search.group_pick_saved: "Meme scope for this group: {{.Scope}}. /memescope button posts the search button again."
 search.group_pick_unsupported: "The meme-search server cannot list tags or folders. Use /memescope set #tag dir:folder instead."
+search.cmd_start: "Start searching memes"
+search.cmd_help: "How to search"
+search.cmd_settings: "Search mode, tags and folders"
+search.cmd_memescope: "Meme scope of this group (admins)"

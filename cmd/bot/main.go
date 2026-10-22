@@ -113,6 +113,7 @@ func run(ctx context.Context, environ []string, baseDir string, botOpts ...bot.O
 	for _, m := range modules {
 		m.Register(b)
 	}
+	module.SetCommands(ctx, b, bundle, log, modules...)
 
 	// Same period as the library rescan: both pick up server-side changes, and
 	// search parameters are re-checked on every search answer anyway.

@@ -18,13 +18,15 @@ import (
 // the first getUpdates (the bot is serving) and stops it: a wiring or
 // migration error that unit tests miss fails here instead of at deploy.
 func TestRunStartsAndStops(t *testing.T) {
-	var polled atomic.Bool
+	var polled, commands atomic.Bool
 	tg := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		method := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 		var result any = true
 		switch method {
 		case "getMe":
 			result = map[string]any{"id": 999, "is_bot": true, "first_name": "Memes", "username": "meme_test_bot"}
+		case "setMyCommands":
+			commands.Store(true)
 		case "getUpdates":
 			polled.Store(true)
 			// Long polling: hold the request like Telegram does, until the bot gives up.
@@ -65,6 +67,9 @@ func TestRunStartsAndStops(t *testing.T) {
 			t.Fatal("bot never polled for updates")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	if !commands.Load() {
+		t.Error("the command menu was not set before serving")
 	}
 	cancel()
 	select {

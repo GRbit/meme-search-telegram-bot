@@ -202,7 +202,10 @@ docker compose up -d
 **Without Docker:** `make build` and run `bin/meme-search-telegram-bot` with the variables in the environment.
 Relative defaults (`data/bot.db`, `memes/`, `config.yml`) are resolved next to the binary.
 
-Then open the bot in Telegram and send `/start`.
+Then open the bot in Telegram and send `/start`. At startup the bot fills Telegram's command menu (typing `/`
+suggests the commands): `/start`, `/help` and `/settings` in private chats, `/memescope` in groups (only with
+inline mode on), in English, Russian and a default list for other languages. If Telegram refuses, the bot logs a
+warning and works without the menu.
 
 ## Usage
 

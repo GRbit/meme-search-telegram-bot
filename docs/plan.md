@@ -351,3 +351,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   match when one is a prefix of the other (the current saver writes 20 characters of the SHA-256, the owner's
   older library 32). A name with no such run or two different ones has no hash. Equal file names alone are not duplicates (owner decision): generic
   names like `image.png` repeat across folders for different pictures.
+- Command menu: modules may implement `module.Commander`; `module.SetCommands` (called by cmd/bot after
+  registering) publishes them with setMyCommands per scope (all private chats, all groups) as a default list
+  plus one per bundle language. Empty scopes are left alone, failures are a Warn. Only search has commands;
+  `/memescope` is listed only with inline mode, `/cancel` never.

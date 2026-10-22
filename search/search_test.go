@@ -19,6 +19,7 @@ import (
 	"github.com/grbit/meme-search-telegram-bot/i18n"
 	"github.com/grbit/meme-search-telegram-bot/mediacache"
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
+	"github.com/grbit/meme-search-telegram-bot/module"
 )
 
 func TestConfigValidate(t *testing.T) {
@@ -725,3 +726,36 @@ func TestInlineDebounceBounds(t *testing.T) {
 		t.Fatalf("5s rejected: %v", err)
 	}
 }
+
+func TestCommandsForTheMenu(t *testing.T) {
+	names := func(cs []module.Command) []string {
+		var out []string
+		for _, c := range cs {
+			out = append(out, fmt.Sprintf("%s/%d", c.Name, c.Scope))
+		}
+		return out
+	}
+	withInline := newEnv(t, &fakeAPI{}, &fakeMedia{uploads: true}).mod.Commands()
+	want := []string{
+		fmt.Sprintf("start/%d", module.ScopePrivate), fmt.Sprintf("help/%d", module.ScopePrivate),
+		fmt.Sprintf("settings/%d", module.ScopePrivate), fmt.Sprintf("memescope/%d", module.ScopeGroups),
+	}
+	if !slices.Equal(names(withInline), want) {
+		t.Fatalf("commands = %v", names(withInline))
+	}
+	// Without inline mode a group scope has no button to pin, so /memescope is not offered.
+	if got := names(newEnv(t, &fakeAPI{}, &fakeMedia{}).mod.Commands()); !slices.Equal(got, want[:3]) {
+		t.Fatalf("commands without inline = %v", got)
+	}
+	// Every description exists in every shipped language.
+	bundle, _ := i18n.NewBundle("en", nil, LocaleFS())
+	for _, lang := range []string{"en", "ru"} {
+		for _, c := range withInline {
+			if txt := bundle.Localizer(lang).T(c.DescriptionID, nil); txt == c.DescriptionID || txt == "" {
+				t.Errorf("%s: no description for %s", lang, c.Name)
+			}
+		}
+	}
+}
+
+var _ module.Commander = (*Module)(nil)

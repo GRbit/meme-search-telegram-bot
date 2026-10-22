@@ -30,6 +30,8 @@ srch, _ := search.New(search.Config{}, search.Deps{API: api, Media: media, I18n:
 for _, m := range []module.Module{srch, sv} {
 	m.Register(b)
 }
+// Optional: list the modules' commands in Telegram's "/" menu (en, ru and a default list).
+module.SetCommands(ctx, b, bundle, log, srch, sv)
 go api.WatchCapabilities(ctx, 6*time.Hour)
 go media.Run(ctx)
 b.Start(ctx)

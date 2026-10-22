@@ -68,3 +68,7 @@ search.group_pick: "Мемы для этой группы: {{.Scope}}. Выбе�
 search.group_pick_done: "Готово"
 search.group_pick_saved: "Мемы для этой группы: {{.Scope}}. /memescope button снова покажет кнопку поиска."
 search.group_pick_unsupported: "Сервер мемов не умеет показывать списки тегов и папок. Используй /memescope set #тег dir:папка."
+search.cmd_start: "Начать поиск мемов"
+search.cmd_help: "Как искать"
+search.cmd_settings: "Режим поиска, теги и папки"
+search.cmd_memescope: "Мемы для этой группы (админы)"

@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
+	"slices"
 
 	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
 	"go.yaml.in/yaml/v3"
@@ -81,6 +82,17 @@ func (b *Bundle) Localizer(languageCode string) *Localizer {
 		lang: languageCode,
 		log:  b.log,
 	}
+}
+
+// Languages returns the language tags the bundle has messages for, sorted;
+// hosts use it to localize what Telegram shows outside chats (the command menu).
+func (b *Bundle) Languages() []string {
+	var out []string
+	for _, t := range b.b.LanguageTags() {
+		out = append(out, t.String())
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Localizer renders messages in one language.

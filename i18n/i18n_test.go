@@ -214,3 +214,16 @@ func catalogIDs(t *testing.T, fsys fs.FS, name string) []string {
 	slices.Sort(ids)
 	return ids
 }
+
+func TestLanguages(t *testing.T) {
+	b, err := i18n.NewBundle("en", nil, fstest.MapFS{
+		"en.yaml": {Data: []byte("a: \"A\"\n")},
+		"ru.yaml": {Data: []byte("a: \"А\"\n")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := b.Languages(); !slices.Equal(got, []string{"en", "ru"}) {
+		t.Fatalf("languages = %v", got)
+	}
+}
