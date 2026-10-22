@@ -241,6 +241,8 @@ query. Add the bot to the group (no admin rights and no privacy mode change need
 
 - `/memescope@yourbot set #reaction #work` (filters only: `#tag`, `dir:folder`). The bot answers with a message
   whose "Search memes" button types `@yourbot g:<code> ` into the input field; pin that message.
+- `/memescope@yourbot pick` (newer meme-search versions that list tags and folders) posts a message with "Pick
+  tags" and "Folders" buttons to choose from the lists; only admins' presses count. "Done" shows the result.
 - `/memescope@yourbot` shows the scope (anyone), `reset` searches all memes but keeps the button working,
   `button` posts the button again, `off` removes the scope.
 

@@ -388,6 +388,9 @@ func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Updat
 	case strings.HasPrefix(cq.Data, settingsPrefix):
 		m.handleSettingsCallback(ctx, b, cq)
 		return
+	case strings.HasPrefix(cq.Data, groupPickPrefix):
+		m.handleGroupPick(ctx, b, cq)
+		return
 	case strings.HasPrefix(cq.Data, everywherePrefix):
 		m.handleEverywhere(ctx, b, cq)
 		return

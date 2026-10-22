@@ -340,3 +340,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   error or a failed request -> "Could not save". `ErrUnsupported` and `422 invalid_folder` fall back to the folder
   writer, which creates the folder for the owner (or upstream L) to register. No local file means no
   `AddLibraryFile`; the feed warms the meme up.
+- Group picker (tasks 2.1/2.2): `/memescope pick` posts the same pickers as `/settings` over a `pickTarget` (the
+  group's scope instead of the user's settings). The message is visible to the whole group, so every press runs
+  `getChatAdministrators`; non-admin presses get a popup and change nothing. Each toggle saves at once and keeps
+  the group's code, so a pinned button never breaks; "Done" removes the buttons. No "Only mine" for groups.

@@ -183,7 +183,7 @@ func (m *Module) handleGroupScope(ctx context.Context, b *bot.Bot, u *models.Upd
 		return
 	}
 	switch sub {
-	case "set", "reset", "button", "off":
+	case "set", "reset", "button", "off", "pick":
 	default:
 		reply("search.group_usage", nil)
 		return
@@ -200,6 +200,8 @@ func (m *Module) handleGroupScope(ctx context.Context, b *bot.Bot, u *models.Upd
 		return
 	}
 	switch sub {
+	case "pick":
+		m.startGroupPick(ctx, b, loc, chat)
 	case "set":
 		o := parseOverrides(rest)
 		if o.query != "" || (len(o.tags) == 0 && len(o.folders) == 0) {
@@ -291,18 +293,27 @@ func (m *Module) isGroupAdmin(ctx context.Context, b *bot.Bot, msg *models.Messa
 	if msg.SenderChat != nil && msg.SenderChat.ID == msg.Chat.ID {
 		return true, nil
 	}
-	if msg.From == nil || msg.From.ID == groupAnonymousAdmin {
+	if msg.From == nil {
 		return false, nil
 	}
-	admins, err := b.GetChatAdministrators(ctx, &bot.GetChatAdministratorsParams{ChatID: msg.Chat.ID})
+	return m.isChatAdmin(ctx, b, msg.Chat.ID, msg.From.ID)
+}
+
+// isChatAdmin checks user against getChatAdministrators. The anonymous-admin
+// placeholder alone proves nothing: anyone's anonymous post would carry it.
+func (m *Module) isChatAdmin(ctx context.Context, b *bot.Bot, chat, user int64) (bool, error) {
+	if user == groupAnonymousAdmin {
+		return false, nil
+	}
+	admins, err := b.GetChatAdministrators(ctx, &bot.GetChatAdministratorsParams{ChatID: chat})
 	if err != nil {
 		return false, err
 	}
 	for _, a := range admins {
 		switch {
-		case a.Owner != nil && a.Owner.User != nil && a.Owner.User.ID == msg.From.ID:
+		case a.Owner != nil && a.Owner.User != nil && a.Owner.User.ID == user:
 			return true, nil
-		case a.Administrator != nil && a.Administrator.User.ID == msg.From.ID:
+		case a.Administrator != nil && a.Administrator.User.ID == user:
 			return true, nil
 		}
 	}

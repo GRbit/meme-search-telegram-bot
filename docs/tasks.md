@@ -65,8 +65,8 @@ re-enables charging `srch:s:`. Switches to `GET /api/v1/memes/:id/similar` when 
 ### 2.1 Folder filter (needs D1 + D2)
 
 Done: capabilities, `/settings` picker, `dir:`, inline and group scope, and mediacache matching by folder plus
-file name, and "Only mine" (cmd/bot passes the saver's `FolderFor`). Not done yet: the picker for `/memescope`
-(admins type `dir:` names, checked against the list).
+file name, "Only mine" (cmd/bot passes the saver's `FolderFor`), and the `/memescope pick` picker for groups
+(every press is checked against the group's admins).
 
 - Capability check at startup and every `WARMUP_INTERVAL`: `GET /api/v1/folders` 404 -> older server, folder
   options stay hidden (info log). After every filtered search compare `meta.folders` with what was sent: an
@@ -79,8 +79,8 @@ file name, and "Only mine" (cmd/bot passes the saver's `FolderFor`). Not done ye
 
 ### 2.2 Tag picker (needs E)
 
-Done for `/settings`: "Pick tags" from the list, "Any tag"/"All tags". `/memescope` gets its picker with folders
-(step 6 of the part 2 order); until then admins type `#tags`, matched any-of.
+Done: "Pick tags" in `/settings` and `/memescope pick`, "Any tag"/"All tags" in `/settings`. A group's tags are
+always matched any-of.
 
 `/settings` and `/memescope` pick tags from `GET /api/v1/tags`; optional "all of these tags" via `tag_match=all`.
 
