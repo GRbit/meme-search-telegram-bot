@@ -13,9 +13,10 @@ import (
 type scope struct {
 	mode memesearch.Mode
 	tags []string
-	// folders were asked for but are not applied: the API has no folder
-	// filter yet, so the search runs everywhere and the user is told.
-	folders []string
+	// folders are sent only to a Server; foldersApplied is set by the last
+	// search with them. When false the search ran everywhere and the user is told.
+	folders        []string
+	foldersApplied bool
 }
 
 // privateScope applies a query's overrides on top of the user's settings,
@@ -39,8 +40,8 @@ func (sc scope) options(limit int) memesearch.SearchOptions {
 }
 
 // filtered reports whether dropping the filters could change the result.
-// Folders do not count: they are not applied yet.
-func (sc scope) filtered() bool { return len(sc.tags) > 0 }
+// Folders count only when the server applied them.
+func (sc scope) filtered() bool { return len(sc.tags) > 0 || sc.foldersApplied }
 
 func (m *Module) isDefaultScope(sc scope) bool {
 	return sc.mode == m.cfg.Mode && len(sc.tags) == 0 && len(sc.folders) == 0

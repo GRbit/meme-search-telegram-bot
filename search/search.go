@@ -116,12 +116,32 @@ var (
 	_ MediaCache = (*mediacache.Direct)(nil)
 )
 
+// Server is the part of the meme-search API that only newer servers have;
+// *memesearch.HTTPClient implements it. The module checks Capabilities before
+// offering a feature and trusts a search filter only when Page.Ignored says
+// the server applied it.
+type Server interface {
+	memesearch.CapabilitySource
+	SearchPage(ctx context.Context, q string, opts memesearch.SearchOptions) (memesearch.Page, error)
+	Folders(ctx context.Context) ([]memesearch.Folder, error)
+	Tags(ctx context.Context) ([]memesearch.Tag, error)
+	Similar(ctx context.Context, id int64, limit int) ([]memesearch.Meme, error)
+}
+
+var _ Server = (*memesearch.HTTPClient)(nil)
+
 // Deps are the collaborators the host passes in.
 type Deps struct {
-	API   memesearch.Client
-	Media MediaCache
-	I18n  *i18n.Bundle
-	Log   *slog.Logger
+	API memesearch.Client
+	// Server is optional; nil means Deps.API when it implements Server, else a
+	// stock server, where the module behaves as before part 2.
+	Server Server
+	// OwnFolder returns the library folder the user's saved memes go to, or ""
+	// when the user cannot save. Optional: nil hides the "Only mine" shortcut.
+	OwnFolder func(u *models.User) string
+	Media     MediaCache
+	I18n      *i18n.Bundle
+	Log       *slog.Logger
 	// Middlewares wrap every handler that may run a search (access limits).
 	Middlewares []bot.Middleware
 	Now         func() time.Time // nil means time.Now
@@ -140,6 +160,9 @@ type Module struct {
 	after  func(time.Duration) (<-chan time.Time, func())
 	inline latestQueries
 	inputs pendingInputs
+	srv    Server // nil on a stock server
+	// folderList caches the server's folders for pickers and dir: checks.
+	folderList listCache[memesearch.Folder]
 	// groupDefault is Config.InlineGroupScope parsed once.
 	groupDefault overrides
 }
@@ -189,7 +212,12 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	if now == nil {
 		now = time.Now
 	}
+	srv := deps.Server
+	if srv == nil {
+		srv, _ = deps.API.(Server)
+	}
 	return &Module{
+		srv:   srv,
 		cfg:   cfg,
 		deps:  deps,
 		log:   log,

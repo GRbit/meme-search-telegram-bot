@@ -197,19 +197,21 @@ Then open the bot in Telegram and send `/start`.
     first.
   - **Tags** limit search to memes having any of the given tags (at most 10, as meme-search allows). Until
     meme-search can list its tags, type them separated by commas.
+  - **Folders** (only when meme-search can list its folders, newer versions) limit search to the chosen library
+    folders, at most 10; "Only mine" picks your own save folder, "All folders" drops the limit.
   - **Reset** returns to the defaults. Changing settings never counts against the daily limit.
 - Filters typed into one search replace the saved value of their kind for that search only:
   - `#tag` (repeatable) searches only memes with any of these tags, e.g. `#cat #dog funny`.
-  - `dir:folder` (repeatable) and `dir:*` (ignore saved folders) are understood, but meme-search cannot filter by
-    folder yet: the bot searches all folders and says so.
+  - `dir:folder` (repeatable, case does not matter) searches only those folders; `dir:*` ignores the saved
+    folders. A meme-search version without the folder filter searches all folders, and the bot says so.
   - Words starting with `#` inside a word (`c#`) stay part of the query. A message with filters only is not a
     search and does not count.
 - When a search is not the default one, the message under the results says what applied (e.g. "Search: Words,
   tags: cat"); with tags there is a "Search everywhere" button that repeats the search without them (it counts as
-  a search). An empty result with tags says so and offers the same button.
+  a search). Applied folders behave like tags. An empty result with tags says so and offers the same button.
 - "Similar N" under the results searches for memes similar to the N-th meme of that album (by its description,
   within the same tags); it counts as a search. Memes not described yet have no such button.
-- Inline (`@yourbot query` in any chat) always uses Smart search. Its tags come, most specific first, from
+- Inline (`@yourbot query` in any chat) always uses Smart search. Its tags and folders come, each on its own, most specific first, from
   `#tag` in the query, a group's scope button (below), the user's `/settings`, and for queries typed in groups the
   `INLINE_GROUP_SCOPE` default.
 

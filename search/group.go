@@ -214,7 +214,13 @@ func (m *Module) handleGroupScope(ctx context.Context, b *bot.Bot, u *models.Upd
 			reply("search.query_tag_too_long", map[string]any{"Tag": longestTag(o.tags), "Len": memesearch.MaxTagLen})
 			return
 		}
-		m.setGroupAndPost(ctx, b, loc, chat, o.tags, o.folders, from)
+		folders, unknown := m.resolveFolders(ctx, o.folders)
+		if len(unknown) > 0 {
+			m.log.DebugContext(ctx, "search: unknown folder in group scope", "chat_id", chat, "folders", unknown)
+			reply("search.folder_unknown", map[string]any{"Folders": strings.Join(unknown, ", ")})
+			return
+		}
+		m.setGroupAndPost(ctx, b, loc, chat, o.tags, folders, from)
 	case "reset":
 		m.setGroupAndPost(ctx, b, loc, chat, nil, nil, from)
 	case "button":
@@ -262,7 +268,7 @@ func (m *Module) postGroupButton(ctx context.Context, b *bot.Bot, loc *i18n.Loca
 		desc = loc.T("search.group_everything", nil)
 	}
 	text := loc.T("search.group_button", map[string]any{"Scope": desc})
-	if len(g.folders) > 0 {
+	if len(g.folders) > 0 && !m.caps().FolderFilter {
 		text += "\n" + loc.T("search.folders_unsupported", nil)
 	}
 	prefill := groupCodePrefix + g.code + " "

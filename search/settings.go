@@ -36,6 +36,13 @@ func (m *Module) handleSettingsCommand(ctx context.Context, b *bot.Bot, u *model
 	m.sendText(ctx, b, msg.Chat.ID, text, kb)
 }
 
+// foldersOffered reports whether settings show folders: the server can list
+// them, or the user saved some before a downgrade and should still see them.
+func (m *Module) foldersOffered(p prefs) (line, button bool) {
+	button = m.caps().FolderList
+	return button || len(p.Folders) > 0, button
+}
+
 // settingsView renders the settings message and its keyboard.
 func (m *Module) settingsView(loc *i18n.Localizer, p prefs) (string, *models.InlineKeyboardMarkup) {
 	mode := m.effectiveMode(p)
@@ -43,7 +50,13 @@ func (m *Module) settingsView(loc *i18n.Localizer, p prefs) (string, *models.Inl
 	if len(p.Tags) > 0 {
 		tags = strings.Join(p.Tags, ", ")
 	}
-	text := loc.T("search.settings", map[string]any{"Mode": modeName(loc, mode), "Tags": tags})
+	folderLine, folderButton := m.foldersOffered(p)
+	folders := loc.T("search.folders_all", nil)
+	if len(p.Folders) > 0 {
+		folders = strings.Join(p.Folders, ", ")
+	}
+	text := loc.T("search.settings", map[string]any{"Mode": modeName(loc, mode), "Tags": tags,
+		"ShowFolders": folderLine, "Folders": folders})
 	modeBtn := func(md memesearch.Mode) models.InlineKeyboardButton {
 		name := modeName(loc, md)
 		if md == mode {
@@ -55,11 +68,12 @@ func (m *Module) settingsView(loc *i18n.Localizer, p prefs) (string, *models.Inl
 	if len(p.Tags) > 0 {
 		tagRow = append(tagRow, models.InlineKeyboardButton{Text: loc.T("search.settings_clear_tags", nil), CallbackData: settingsPrefix + "clear"})
 	}
-	return text, &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-		{modeBtn(memesearch.ModeVector), modeBtn(memesearch.ModeKeyword)},
-		tagRow,
-		{{Text: loc.T("search.settings_reset", nil), CallbackData: settingsPrefix + "reset"}},
-	}}
+	rows := [][]models.InlineKeyboardButton{{modeBtn(memesearch.ModeVector), modeBtn(memesearch.ModeKeyword)}, tagRow}
+	if folderButton {
+		rows = append(rows, []models.InlineKeyboardButton{{Text: loc.T("search.settings_folders", nil), CallbackData: folderPrefix + "p:0"}})
+	}
+	rows = append(rows, []models.InlineKeyboardButton{{Text: loc.T("search.settings_reset", nil), CallbackData: settingsPrefix + "reset"}})
+	return text, &models.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
 
 func modeName(loc *i18n.Localizer, md memesearch.Mode) string {
@@ -79,6 +93,10 @@ func (m *Module) effectiveMode(p prefs) memesearch.Mode {
 // handleSettingsCallback applies one settings button. Settings changes are
 // free: the access middleware charges only searches.
 func (m *Module) handleSettingsCallback(ctx context.Context, b *bot.Bot, cq *models.CallbackQuery) {
+	if strings.HasPrefix(cq.Data, folderPrefix) {
+		m.handleFolderCallback(ctx, b, cq)
+		return
+	}
 	user := cq.From.ID
 	loc := m.deps.I18n.Localizer(cq.From.LanguageCode)
 	action := strings.TrimPrefix(cq.Data, settingsPrefix)
@@ -124,7 +142,12 @@ func (m *Module) handleSettingsCallback(ctx context.Context, b *bot.Bot, cq *mod
 // showSettings edits the settings message in place, or sends a new one when
 // Telegram no longer gives access to it.
 func (m *Module) showSettings(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, cq *models.CallbackQuery, p prefs) {
-	text, kb := m.settingsView(loc, p)
+	m.editSettings(ctx, b, cq, func() (string, *models.InlineKeyboardMarkup) { return m.settingsView(loc, p) })
+}
+
+// editSettings replaces the settings message (or a picker in its place) with view.
+func (m *Module) editSettings(ctx context.Context, b *bot.Bot, cq *models.CallbackQuery, view func() (string, *models.InlineKeyboardMarkup)) {
+	text, kb := view()
 	prev := cq.Message.Message
 	if prev == nil {
 		m.sendText(ctx, b, cq.From.ID, text, kb)

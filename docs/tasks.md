@@ -64,6 +64,10 @@ re-enables charging `srch:s:`. Switches to `GET /api/v1/memes/:id/similar` when 
 
 ### 2.1 Folder filter (needs D1 + D2)
 
+Done on the search side: capabilities, `/settings` picker, `dir:`, inline and group scope. Not done: the picker
+for `/memescope` (admins type `dir:` names, checked against the list), the "Only mine" host wiring (needs the saver
+to export its folder naming), and the mediacache part (another agent).
+
 - Capability check at startup and every `WARMUP_INTERVAL`: `GET /api/v1/folders` 404 -> older server, folder
   options stay hidden (info log). After every filtered search compare `meta.folders` with what was sent: an
   older server ignores unknown parameters and returns unfiltered results; then warn, tell the user, mark the

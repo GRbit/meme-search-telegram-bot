@@ -472,3 +472,58 @@ func mediaOf(t *testing.T, c call) []map[string]any {
 	}
 	return media
 }
+
+// fakeServer adds the newer endpoints to fakeAPI. Searches through SearchPage
+// are recorded in the embedded fakeAPI like plain searches.
+type fakeServer struct {
+	*fakeAPI
+	caps       memesearch.Capabilities
+	folders    []memesearch.Folder
+	foldersErr error
+	// ignore is reported as Page.Ignored on every SearchPage, like an older server.
+	ignore      []memesearch.Param
+	folderCalls int
+}
+
+func newServer(api *fakeAPI, folders ...string) *fakeServer {
+	s := &fakeServer{fakeAPI: api, caps: memesearch.Capabilities{FolderList: true, FolderFilter: true}}
+	for i, f := range folders {
+		s.folders = append(s.folders, memesearch.Folder{Name: f, MemeCount: i + 1})
+	}
+	return s
+}
+
+func (s *fakeServer) Capabilities() memesearch.Capabilities {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.caps
+}
+
+func (s *fakeServer) SearchPage(ctx context.Context, q string, o memesearch.SearchOptions) (memesearch.Page, error) {
+	found, err := s.Search(ctx, q, o)
+	if err != nil {
+		return memesearch.Page{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return memesearch.Page{Memes: found, Ignored: s.ignore}, nil
+}
+
+func (s *fakeServer) Folders(context.Context) ([]memesearch.Folder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.folderCalls++
+	return s.folders, s.foldersErr
+}
+
+func (s *fakeServer) Tags(context.Context) ([]memesearch.Tag, error) {
+	return nil, memesearch.ErrUnsupported
+}
+
+func (s *fakeServer) Similar(context.Context, int64, int) ([]memesearch.Meme, error) {
+	return nil, memesearch.ErrUnsupported
+}
+
+func withServer(s *fakeServer) envOpt {
+	return func(_ *Config, d *Deps) { d.Server = s }
+}

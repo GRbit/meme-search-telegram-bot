@@ -127,6 +127,13 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 			map[string]any{"Tag": longestTag(o.tags), "Len": memesearch.MaxTagLen}), nil)
 		return
 	}
+	folders, unknown := m.resolveFolders(ctx, o.folders)
+	if len(unknown) > 0 {
+		m.log.DebugContext(ctx, "search: unknown folder in query", "user_id", user, "folders", unknown)
+		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.folder_unknown", map[string]any{"Folders": strings.Join(unknown, ", ")}), nil)
+		return
+	}
+	o.folders = folders
 	m.runSearch(ctx, b, loc, user, msg.Chat.ID, q, m.privateScope(m.loadPrefs(ctx, user), o), 0)
 }
 
@@ -136,16 +143,16 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 // show the meme it started from.
 func (m *Module) runSearch(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64, q string, sc scope, exclude int64) {
 	m.log.DebugContext(ctx, "search: scope", "user_id", user, "mode", string(sc.mode), "tags", sc.tags,
-		"folders_not_applied", sc.folders)
-	found, err := m.deps.API.Search(ctx, q, sc.options(memesearch.MaxLimit))
+		"folders", sc.folders)
+	found, err := m.find(ctx, user, q, &sc, memesearch.MaxLimit)
 	if err != nil {
-		m.sendText(ctx, b, chat, m.searchError(ctx, loc, user, err), nil)
+		m.sendText(ctx, b, chat, m.searchError(ctx, loc, user, err, sc.folders), nil)
 		return
 	}
 	if exclude != 0 {
 		found = slices.DeleteFunc(found, func(mm memesearch.Meme) bool { return mm.ID == exclude })
 	}
-	m.log.DebugContext(ctx, "search: results", "user_id", user, "count", len(found))
+	m.log.DebugContext(ctx, "search: results", "user_id", user, "count", len(found), "folders_applied", sc.foldersApplied)
 	s := &session{owner: user, chat: chat, memes: found, created: m.now(), query: q, scope: sc}
 	if len(found) == 0 {
 		if !sc.filtered() {
@@ -165,7 +172,12 @@ func (m *Module) runSearch(ctx context.Context, b *bot.Bot, loc *i18n.Localizer,
 }
 
 // searchError logs err and returns the text to show the user.
-func (m *Module) searchError(ctx context.Context, loc *i18n.Localizer, user int64, err error) string {
+func (m *Module) searchError(ctx context.Context, loc *i18n.Localizer, user int64, err error, folders []string) string {
+	if invalidFolder(err) {
+		// The folder list was unavailable or stale, so the server had the last word.
+		m.log.DebugContext(ctx, "search: server rejected a folder", "user_id", user, "folders", folders, "err", err)
+		return loc.T("search.folder_unknown", map[string]any{"Folders": strings.Join(folders, ", ")})
+	}
 	if errors.Is(err, memesearch.ErrRateLimited) {
 		m.log.WarnContext(ctx, "search: API rate limited", "user_id", user, "err", err)
 		return loc.T("search.busy", nil)
@@ -187,7 +199,7 @@ func (m *Module) sendPage(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, 
 	}
 	lines := []string{loc.T("search.page", map[string]any{"Page": page, "Pages": pages})}
 	if page == 1 {
-		if len(s.scope.folders) > 0 {
+		if len(s.scope.folders) > 0 && !s.scope.foldersApplied {
 			lines = append([]string{loc.T("search.folders_unsupported", nil)}, lines...)
 		}
 		if !m.isDefaultScope(s.scope) {
@@ -372,10 +384,18 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 	results := []models.InlineQueryResult{}
 	var misses []memesearch.Meme
 	if ok {
+		// Unknown typed folders are passed on: the server's 422 gives an empty grid, which is all
+		// inline can say anyway.
+		if folders, unknown := m.resolveFolders(ctx, o.folders); len(unknown) == 0 {
+			o.folders = folders
+		}
 		sc := m.inlineScope(m.loadPrefs(ctx, user), o, m.inlineGroup(ctx, user, o.group), iq.ChatType)
-		m.log.DebugContext(ctx, "search: inline scope", "user_id", user, "tags", sc.tags, "folders_not_applied", sc.folders)
-		found, err := m.deps.API.Search(ctx, q, sc.options(m.cfg.InlineResults))
-		if err != nil {
+		m.log.DebugContext(ctx, "search: inline scope", "user_id", user, "tags", sc.tags, "folders", sc.folders)
+		found, err := m.find(ctx, user, q, &sc, m.cfg.InlineResults)
+		switch {
+		case invalidFolder(err):
+			m.log.DebugContext(ctx, "search: inline folder rejected by the server", "user_id", user, "folders", sc.folders)
+		case err != nil:
 			// Inline answers have no room for an explanation; an empty grid it is.
 			m.log.WarnContext(ctx, "search: inline search failed", "user_id", user, "err", err)
 		}
