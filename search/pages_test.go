@@ -105,3 +105,29 @@ func TestCommandName(t *testing.T) {
 		}
 	}
 }
+
+func TestPageStoreMemeBudgetEvictsLeastRecentlyUsed(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p := newPageStore(time.Hour, 100)
+	p.maxMemes = 50
+	a := p.put(&session{created: t0, memes: memeRange(20)}, t0)
+	b := p.put(&session{created: t0.Add(time.Minute), memes: memeRange(20)}, t0.Add(time.Minute))
+	if p.get(a, t0.Add(2*time.Minute)) == nil { // a is now used more recently than b
+		t.Fatal("a gone early")
+	}
+	c := p.put(&session{created: t0.Add(3 * time.Minute), memes: memeRange(20)}, t0.Add(3*time.Minute))
+	now := t0.Add(4 * time.Minute)
+	if p.get(b, now) != nil || p.get(a, now) == nil || p.get(c, now) == nil || p.memes() != 40 {
+		t.Fatalf("after put: memes=%d", p.memes())
+	}
+	// Growth counts too, and never evicts the growing session itself.
+	sc := p.get(c, now)
+	p.grow(sc, 20, now)
+	if p.get(a, now) != nil || p.get(c, now) == nil || p.memes() != 40 {
+		t.Fatalf("after grow: memes=%d", p.memes())
+	}
+	// Expired sessions give their budget back.
+	if p.get(c, now.Add(2*time.Hour)) != nil || p.memes() != 0 {
+		t.Fatalf("after expiry: memes=%d", p.memes())
+	}
+}

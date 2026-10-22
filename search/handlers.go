@@ -554,6 +554,8 @@ func (m *Module) ensurePage(ctx context.Context, loc *i18n.Localizer, s *session
 	}
 	m.log.DebugContext(ctx, "search: fetched more results", "user_id", s.owner, "offset", s.nextOffset,
 		"count", len(found), "added", added, "next_offset", next)
+	// s.mu is held: the store lock nests inside it, never the other way round.
+	m.pages.grow(s, added, m.now())
 	s.nextOffset = next
 	if pageSlice(s.memes, page, per) == nil {
 		return loc.T("search.no_more", nil)

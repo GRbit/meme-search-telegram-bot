@@ -143,3 +143,19 @@ func TestMoreFetchError(t *testing.T) {
 		t.Fatalf("retry album = %v", got)
 	}
 }
+
+// Fetching more counts against the store's meme budget: the least recently
+// used other session goes, so pages past 20 cannot grow memory without bound.
+func TestMoreFetchRespectsMemeBudget(t *testing.T) {
+	srv := pagingServer(30)
+	e := newEnv(t, srv.fakeAPI, &fakeMedia{uploads: true}, withServer(srv))
+	e.mod.pages.maxMemes = 45
+	e.process(textUpdate("first"))
+	firstMore := e.moreData(t)
+	e.process(textUpdate("second"))
+	pageTo(t, e, 5) // fetches 20 more: 60 memes stored, over budget
+	e.process(callbackUpdate(userID, firstMore))
+	if txt := e.lastSent(t, "answerCallbackQuery").fields["text"]; !strings.Contains(txt, "expired") {
+		t.Fatalf("first session popup = %q, want expired", txt)
+	}
+}
