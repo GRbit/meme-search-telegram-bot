@@ -124,14 +124,14 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 		return
 	}
 	o.folders = folders
-	m.runSearch(ctx, b, loc, user, msg.Chat.ID, q, m.privateScope(m.loadPrefs(ctx, user), o), 0)
+	m.runSearch(ctx, b, loc, user, msg.Chat.ID, q, m.privateScope(m.loadPrefs(ctx, user), o), nil)
 }
 
 // runSearch searches q within sc and sends page 1 to chat; text searches and
 // the buttons that rerun a search all end here.
-// exclude (a meme id, or 0) is dropped from the results: "Similar" must not
-// show the meme it started from.
-func (m *Module) runSearch(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64, q string, sc scope, exclude int64) {
+// exclude (or nil) is dropped from the results with its copies: "Similar"
+// must not show the meme it started from.
+func (m *Module) runSearch(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64, q string, sc scope, exclude *memesearch.Meme) {
 	m.log.DebugContext(ctx, "search: scope", "user_id", user, "mode", string(sc.mode), "tags", sc.tags,
 		"folders", sc.folders)
 	found, next, err := m.find(ctx, user, q, &sc, memesearch.MaxLimit, 0)
@@ -145,12 +145,15 @@ func (m *Module) runSearch(ctx context.Context, b *bot.Bot, loc *i18n.Localizer,
 // showResults stores a session for found and sends page 1; q and sc are what
 // "Search everywhere" and "Similar" rerun.
 func (m *Module) showResults(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64, q string, sc scope,
-	found []memesearch.Meme, next int, exclude int64,
+	found []memesearch.Meme, next int, exclude *memesearch.Meme,
 ) {
-	if exclude != 0 {
-		found = slices.DeleteFunc(found, func(mm memesearch.Meme) bool { return mm.ID == exclude })
+	var seed []memesearch.Meme
+	if exclude != nil {
+		seed = append(seed, *exclude)
 	}
-	m.log.DebugContext(ctx, "search: results", "user_id", user, "count", len(found), "folders_applied", sc.foldersApplied)
+	found, dropped := newDupKeys(seed...).filter(found)
+	m.log.DebugContext(ctx, "search: results", "user_id", user, "count", len(found), "duplicates_dropped", dropped,
+		"folders_applied", sc.foldersApplied)
 	if next > 0 && m.deps.Trusted != nil && !m.deps.Trusted(user) {
 		m.log.DebugContext(ctx, "search: paging past the first results is for trusted users", "user_id", user)
 		next = 0
@@ -289,13 +292,13 @@ func (m *Module) handleSimilar(ctx context.Context, b *bot.Bot, cq *models.Callb
 	sc.mode = memesearch.ModeVector
 	if found, done := m.similarByID(ctx, b, loc, cq.From.ID, s.chat, src, sc); done {
 		if found != nil {
-			m.showResults(ctx, b, loc, cq.From.ID, s.chat, q, sc, found, 0, src.ID)
+			m.showResults(ctx, b, loc, cq.From.ID, s.chat, q, sc, found, 0, &src)
 		}
 		return
 	}
 	m.log.DebugContext(ctx, "search: similar by description", "user_id", cq.From.ID, "meme_id", src.ID,
 		"query_len", utf8.RuneCountInString(q))
-	m.runSearch(ctx, b, loc, cq.From.ID, s.chat, q, sc, src.ID)
+	m.runSearch(ctx, b, loc, cq.From.ID, s.chat, q, sc, &src)
 }
 
 // similarByID asks the server for memes similar to src itself, which is exact
@@ -365,7 +368,7 @@ func (m *Module) handleEverywhere(ctx context.Context, b *bot.Bot, cq *models.Ca
 	}
 	m.answerCallback(ctx, b, cq.ID, "")
 	m.log.DebugContext(ctx, "search: search everywhere", "user_id", cq.From.ID, "query", s.query)
-	m.runSearch(ctx, b, loc, cq.From.ID, s.chat, s.query, scope{mode: s.scope.mode}, 0)
+	m.runSearch(ctx, b, loc, cq.From.ID, s.chat, s.query, scope{mode: s.scope.mode}, nil)
 }
 
 func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Update) {
@@ -460,6 +463,10 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 			// Inline answers have no room for an explanation; an empty grid it is.
 			m.log.WarnContext(ctx, "search: inline search failed", "user_id", user, "err", err)
 		}
+		found, dropped := newDupKeys().filter(found)
+		if dropped > 0 {
+			m.log.DebugContext(ctx, "search: inline duplicates dropped", "user_id", user, "duplicates_dropped", dropped)
+		}
 		for _, meme := range found {
 			fid, hit := m.deps.Media.Lookup(ctx, meme)
 			if !hit {
@@ -534,22 +541,17 @@ func (m *Module) ensurePage(ctx context.Context, loc *i18n.Localizer, s *session
 	case err != nil:
 		return m.searchError(ctx, loc, s.owner, err, sc.folders)
 	}
-	seen := make(map[int64]bool, len(s.memes))
-	for _, mm := range s.memes {
-		seen[mm.ID] = true
+	shown := s.memes
+	if s.exclude != nil {
+		shown = append(slices.Clone(shown), *s.exclude)
 	}
-	added := 0
-	for _, mm := range found {
-		// The library may change between requests and shift results across pages.
-		if seen[mm.ID] || mm.ID == s.exclude {
-			continue
-		}
-		seen[mm.ID] = true
-		s.memes = append(s.memes, mm)
-		added++
-	}
+	// Against everything already in the session: the library may also change between
+	// requests and shift results across pages.
+	fresh, dropped := newDupKeys(shown...).filter(found)
+	s.memes = append(s.memes, fresh...)
+	added := len(fresh)
 	m.log.DebugContext(ctx, "search: fetched more results", "user_id", s.owner, "offset", s.nextOffset,
-		"count", len(found), "added", added, "next_offset", next)
+		"count", len(found), "added", added, "duplicates_dropped", dropped, "next_offset", next)
 	// s.mu is held: the store lock nests inside it, never the other way round.
 	m.pages.grow(s, added, m.now())
 	s.nextOffset = next

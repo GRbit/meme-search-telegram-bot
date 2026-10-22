@@ -35,8 +35,8 @@ type session struct {
 	// everywhere", "Similar" and fetching more.
 	query string
 	scope scope
-	// exclude is a meme id never shown (the source of "Similar"), or 0.
-	exclude int64
+	// exclude is never shown, nor its copies (the source of "Similar"), or nil.
+	exclude *memesearch.Meme
 
 	// mu guards memes and nextOffset: "More" appends while other presses read.
 	mu    sync.Mutex

@@ -345,3 +345,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
 - Paging memory has one bound, `PAGE_MEMES` (default 20000 memes, about 10-20 MB): the least recently used search
   is evicted first, and a stored search without results (kept for "Search everywhere") counts as one meme, so
   no session count cap is needed.
+- Duplicate results: a result is dropped when a better-ranked one of the same search (earlier pages and offset
+  fetches included, and the "Similar" source) has the same file name, or when both names have the saver's full
+  layout `YYYY-MM-DD_<source>_<message id>_<20 lowercase hex>.<ext>` with the same hex. A bare 20-hex word, other
+  case or length, or meme-search's `_<unix time>` clash suffix does not count: a false match would hide a different
+  meme. Exact file names are the owner's rule even though generic names (`image.png`) can collide.
