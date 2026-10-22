@@ -239,7 +239,9 @@ func (m *Module) Register(b *bot.Bot) {
 	mw := m.deps.Middlewares
 	// First: a tag list typed after "Set tags" is not a search and not charged.
 	b.RegisterHandlerMatchFunc(m.isPendingInput, m.handlePendingInput)
-	b.RegisterHandlerMatchFunc(isTextSearch, m.handleText, mw...)
+	// Ahead of the host's middlewares, so an unknown folder is refused before it is charged.
+	textMW := append([]bot.Middleware{m.refuseUnknownFolders}, mw...)
+	b.RegisterHandlerMatchFunc(isTextSearch, m.handleText, textMW...)
 	b.RegisterHandlerMatchFunc(isCommand, m.handleCommand)
 	b.RegisterHandlerMatchFunc(isSettingsCommand, m.handleSettingsCommand)
 	// Group admin commands and membership changes never search: no middleware.

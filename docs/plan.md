@@ -289,8 +289,9 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
 - Folder filter (tasks 2.1): `search.Deps.Server` (defaults to `Deps.API` when it implements it) gives the newer
   endpoints; with it folders are always sent and `Page.Ignored` decides whether they applied, so an old server
   costs nothing and the user gets the old "all folders were searched" note. Typed `dir:` names are matched to the
-  server's list (exact, else a unique case-insensitive match); unknown names get a reply instead of a search, but
-  are charged, since `Chargeable` cannot see the list. Inline passes unknown names on (the server's 422 is an empty
+  server's list (exact, else a unique case-insensitive match); unknown names get a reply instead of a search. A
+  search-owned middleware ahead of the host's refuses them uncharged when a fresh (under 5 minutes) folder list is
+  cached; it never fetches, so the first `dir:` search after the cache expires is still charged. Inline passes unknown names on (the server's 422 is an empty
   grid). The folder list is cached 5 minutes and a failed refresh keeps the stale list. Picker buttons carry the
   list index plus an FNV hash of the name: names can be 300 characters, callback data 64 bytes, and a changed list
   must not select the wrong folder. "Only mine" needs `Deps.OwnFolder`, which the host does not wire yet.

@@ -8,6 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
+
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
 )
 
@@ -48,6 +51,54 @@ func (m *Module) caps() memesearch.Capabilities {
 		return memesearch.Capabilities{}
 	}
 	return m.srv.Capabilities()
+}
+
+// fresh returns the list only while it is within listTTL, without fetching.
+func (c *listCache[T]) fresh(now time.Time) ([]T, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.have || now.Sub(c.at) >= listTTL {
+		return nil, false
+	}
+	return c.items, true
+}
+
+// refuseUnknownFolders answers a text search naming a folder the server does
+// not have before the host's middlewares charge it. It trusts only a fresh
+// cached list and never fetches one: a request per message would cost the
+// listing budget, and a stale list could refuse a folder added since.
+// Without a fresh list the handler decides, after the charge, as before.
+func (m *Module) refuseUnknownFolders(next bot.HandlerFunc) bot.HandlerFunc {
+	return func(ctx context.Context, b *bot.Bot, u *models.Update) {
+		if !Chargeable(u) || m.srv == nil || !m.caps().FolderList {
+			next(ctx, b, u)
+			return
+		}
+		o := parseOverrides(u.Message.Text)
+		if len(o.folders) == 0 {
+			next(ctx, b, u)
+			return
+		}
+		list, ok := m.folderList.fresh(m.now())
+		if !ok {
+			m.log.DebugContext(ctx, "search: no fresh folder list, dir: checked after the charge", "user_id", u.Message.From.ID)
+			next(ctx, b, u)
+			return
+		}
+		var unknown []string
+		for _, f := range o.folders {
+			if _, found := matchFolder(list, f); !found {
+				unknown = append(unknown, f)
+			}
+		}
+		if len(unknown) == 0 {
+			next(ctx, b, u)
+			return
+		}
+		m.log.DebugContext(ctx, "search: unknown folder refused before charging", "user_id", u.Message.From.ID, "folders", unknown)
+		loc := m.deps.I18n.Localizer(u.Message.From.LanguageCode)
+		m.sendText(ctx, b, u.Message.Chat.ID, loc.T("search.folder_unknown", map[string]any{"Folders": strings.Join(unknown, ", ")}), nil)
+	}
 }
 
 // folders returns the server's folder list, or ok false when the server has

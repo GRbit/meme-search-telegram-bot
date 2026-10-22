@@ -1,12 +1,14 @@
 package search
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
@@ -245,5 +247,46 @@ func TestGroupScopeFolders(t *testing.T) {
 	e.process(groupCmd("/memescope set dir:nope", 7))
 	if txt := e.lastSent(t, "sendMessage").fields["text"]; !strings.Contains(txt, "nope") {
 		t.Fatalf("unknown folder reply = %q", txt)
+	}
+}
+
+// An unknown dir: name is refused before the access middleware charges, when
+// the folder list is already cached; the check never fetches the list itself.
+func TestUnknownFolderNotChargedWithCachedList(t *testing.T) {
+	api := &fakeAPI{results: memeRange(1)}
+	srv := newServer(api, "a")
+	var charged []string
+	count := func(next bot.HandlerFunc) bot.HandlerFunc {
+		return func(ctx context.Context, b *bot.Bot, u *models.Update) {
+			if u.Message != nil {
+				charged = append(charged, u.Message.Text)
+			}
+			next(ctx, b, u)
+		}
+	}
+	e := newEnv(t, api, &fakeMedia{uploads: true}, withServer(srv), func(_ *Config, d *Deps) {
+		d.Middlewares = []bot.Middleware{count}
+	})
+	// Nothing cached yet: charged as before, the handler fetches the list and refuses.
+	e.process(textUpdate("cat dir:nope"))
+	if len(charged) != 1 || srv.folderCalls != 1 || api.searchCount() != 0 {
+		t.Fatalf("uncached: charged=%q folder calls=%d searches=%d", charged, srv.folderCalls, api.searchCount())
+	}
+	e.process(textUpdate("cat dir:nope2"))
+	if len(charged) != 1 || srv.folderCalls != 1 || api.searchCount() != 0 {
+		t.Fatalf("cached: charged=%q folder calls=%d searches=%d", charged, srv.folderCalls, api.searchCount())
+	}
+	if txt := e.lastSent(t, "sendMessage").fields["text"]; !strings.Contains(txt, "nope2") {
+		t.Fatalf("reply = %q", txt)
+	}
+	e.process(textUpdate("cat dir:A"))
+	if len(charged) != 2 || api.searchCount() != 1 {
+		t.Fatalf("known folder: charged=%q searches=%d", charged, api.searchCount())
+	}
+	// A stale list is not trusted: a folder added meanwhile must not be refused uncharged.
+	e.clock.Advance(10 * time.Minute)
+	e.process(textUpdate("cat dir:nope3"))
+	if len(charged) != 3 {
+		t.Fatalf("stale list: charged=%q", charged)
 	}
 }
