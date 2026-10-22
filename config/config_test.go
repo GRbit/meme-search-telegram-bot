@@ -319,6 +319,7 @@ func TestValidation(t *testing.T) {
 		{"ids bad", env("SAVE_USER_IDS=1,x"), "SAVE_USER_IDS"},
 		{"save mode unknown", env("SAVE_MODE=shared"), "SAVE_MODE"},
 		{"save folder nested", env("SAVE_MODE=single", "SAVE_FOLDER=a/b"), "SAVE_FOLDER"},
+		{"save folder nested in nested mode", env("SAVE_MODE=nested", "SAVE_FOLDER=a/b"), "SAVE_FOLDER"},
 		{"ids not positive", env("SAVE_USER_IDS=1,0"), "SAVE_USER_IDS"},
 		{"trusted negative", env("TRUSTED_USER_IDS=-5"), "TRUSTED_USER_IDS"},
 		{"trusted bad", env("TRUSTED_USER_IDS=1;2"), "TRUSTED_USER_IDS"},
@@ -332,6 +333,13 @@ func TestValidation(t *testing.T) {
 				t.Errorf("err = %v, want mention of %s", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestSaveModeNested(t *testing.T) {
+	c := mustLoad(t, env("SAVE_MODE=nested", "SAVE_FOLDER=tgmemes"), t.TempDir())
+	if c.Saver.Mode != saver.ModeNested || c.Saver.Folder != "tgmemes" {
+		t.Errorf("mode = %q, folder = %q", c.Saver.Mode, c.Saver.Folder)
 	}
 }
 

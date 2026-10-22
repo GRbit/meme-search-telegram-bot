@@ -28,8 +28,8 @@ cache:
 
 saver:
   # dir:                  # SAVE_DIR, default memes/ next to the executable
-  mode: per_user           # SAVE_MODE: per_user (folder per user) or single (one folder)
-  folder: telegram         # SAVE_FOLDER, the folder of single mode
+  mode: per_user           # SAVE_MODE: per_user (folder per user), single (one folder) or nested (folder/<user>)
+  folder: telegram         # SAVE_FOLDER, the folder of single mode, the parent of nested mode
   dir_prefix: tg-          # SAVE_DIR_PREFIX, per_user mode only
   note: ""                 # SAVE_NOTE, appended to the "Saved" reply
 

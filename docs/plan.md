@@ -90,7 +90,8 @@ Saving (module `saver`):
 5. **Photo or image document -> file** under `SAVE_DIR/<prefix><sender>/`, `<sender>` = Telegram username of the
    person talking to the bot (fallback `id<user id>`), `prefix` from `SAVE_DIR_PREFIX` (default `tg-`). Flat folders
    only; README says each folder is registered in meme-search Settings -> Image paths by its bare name. With
-   `SAVE_MODE=single` every sender shares `SAVE_DIR/<SAVE_FOLDER>/` instead (see Implementation notes). File name
+   `SAVE_MODE=single` every sender shares `SAVE_DIR/<SAVE_FOLDER>/` instead, with `SAVE_MODE=nested` each sender
+   gets `SAVE_DIR/<SAVE_FOLDER>/<sender>/` (see Implementation notes). File name
    `YYYY-MM-DD_<source>_<message id>_<sha256 first 20 hex>.<ext>`; `<source>` from `forward_origin` (user username
    or display name, channel username or title), non-forwarded -> sender's username. Sanitising: keep `\p{L}\p{N}`, everything else
    -> `_`, collapse runs, trim. `photo`: largest size; `document`: image MIME only; ignore stickers, GIFs, video.
@@ -244,6 +245,10 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   writes every allowed user's memes into `SAVE_DIR/<SAVE_FOLDER>`, so meme-search needs one registered folder and
   the folder duplicate check covers all users; `SAVE_DIR_PREFIX` is ignored there. `SAVE_FOLDER` is validated
   (letters, digits, `-`, `_`), not sanitized: the owner registers exactly that name in meme-search.
+- `SAVE_MODE=nested` (tasks 2.7) writes `SAVE_DIR/<SAVE_FOLDER>/<sender>/` without `SAVE_DIR_PREFIX`: the parent
+  already marks the folders as the bot's, and upstream L names the child path `<parent>/<child>`. The folder
+  duplicate check stays per sender, like per_user. No capability check: the mode only changes where files are
+  written, and it is useful only with a server that registers subfolders, which the owner picks knowingly.
 - A library row without its own `file_id` inherits `file_id` and `file_unique_id` from any row with the same
   SHA-256 (indexed since the first migration), on scan and on `AddLibraryFile`: Telegram's file_id follows content,
   so a renamed or moved folder costs a rehash, not days of re-uploads. It works within one scan because old rows

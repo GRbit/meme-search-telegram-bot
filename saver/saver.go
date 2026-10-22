@@ -42,9 +42,9 @@ type Config struct {
 	AlbumDebounce time.Duration  // wait after the last album item before replying; 0 means 2s
 	Location      *time.Location // date in file names; nil means UTC
 	Mode          Mode           // "" means ModePerUser
-	// Folder is the one folder of ModeSingle: letters, digits, "-" and "_"
-	// only, so it is a single path element meme-search can register by name.
-	// "" means "telegram".
+	// Folder is the one folder of ModeSingle and the parent of ModeNested:
+	// letters, digits, "-" and "_" only, so it is a single path element
+	// meme-search can register by name. "" means "telegram".
 	Folder string
 }
 
@@ -58,6 +58,9 @@ type Mode string
 const (
 	ModePerUser Mode = "per_user" // Dir/<DirPrefix><sender>
 	ModeSingle  Mode = "single"   // Dir/<Folder> for every sender
+	// ModeNested is Dir/<Folder>/<sender>: meme-search registers the parent once
+	// with "include subfolders" and picks up every new sender's folder itself.
+	ModeNested Mode = "nested"
 )
 
 const defaultFolder = "telegram"
@@ -86,10 +89,10 @@ func (c Config) Validate() error {
 		errs = append(errs, &configerr.Field{Name: "AlbumDebounce", Reason: "must not be negative"})
 	}
 	switch c.Mode {
-	case "", ModePerUser, ModeSingle:
+	case "", ModePerUser, ModeSingle, ModeNested:
 	default:
 		errs = append(errs, &configerr.Field{Name: "Mode",
-			Reason: fmt.Sprintf("must be %q or %q, got %q", ModePerUser, ModeSingle, c.Mode)})
+			Reason: fmt.Sprintf("must be %q, %q or %q, got %q", ModePerUser, ModeSingle, ModeNested, c.Mode)})
 	}
 	if c.Folder != "" && !validFolder(c.Folder) {
 		errs = append(errs, &configerr.Field{Name: "Folder",
@@ -181,7 +184,7 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	}
 	m := &Module{cfg: cfg, deps: deps, log: deps.Log, httpc: httpc, downloadTimeout: defaultDownloadTimeout, hashes: folderHashes{}}
 	m.albums = newAlbums(cfg.AlbumDebounce, m.flushAlbum)
-	if cfg.Mode == ModeSingle {
+	if cfg.Mode == ModeSingle || cfg.Mode == ModeNested {
 		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "dir", cfg.Dir, "folder", cfg.Folder)
 	} else {
 		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "dir", cfg.Dir, "dir_prefix", cfg.DirPrefix)

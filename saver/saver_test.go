@@ -592,6 +592,47 @@ func TestPerUserModeIsDefault(t *testing.T) {
 	}
 }
 
+// Nested mode keeps a folder per user but under one parent, so meme-search
+// registers the parent once (with "include subfolders") and new users need no
+// server change.
+func TestNestedModeUserFoldersUnderParent(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.Mode = ModeNested; c.Folder = "tgmemes" })
+	e.mod.deps.Permit = fakePermit{1: true, 2: true}
+	e.api.files["a"] = []byte("same")
+	e.api.files["b"] = []byte("same")
+	e.send(photoMsg(1, "a"))
+	if got := e.api.reply(t); got != "Saved." {
+		t.Fatalf("alice reply = %q", got)
+	}
+	e.send(bobMsg(2, "b"))
+	if got := e.api.reply(t); got != "Saved." {
+		t.Fatalf("bob reply = %q (the folder dedup is per user, like per_user mode)", got)
+	}
+	if got := e.ls(t, "."); !slices.Equal(got, []string{"tgmemes"}) {
+		t.Fatalf("top folders = %v", got)
+	}
+	if got := e.ls(t, "tgmemes"); !slices.Equal(got, []string{"alice", "bob"}) {
+		t.Fatalf("user folders = %v (SAVE_DIR_PREFIX must be ignored)", got)
+	}
+	want := []string{"2026-10-18_alice_1_" + hash20("same") + ".jpg"}
+	if got := e.ls(t, "tgmemes/alice"); !slices.Equal(got, want) {
+		t.Fatalf("alice files = %v, want %v", got, want)
+	}
+	if len(e.known.added) != 2 || e.known.added[1] != filepath.Join(e.dir, "tgmemes", "bob", "2026-10-18_bob_2_"+hash20("same")+".jpg") {
+		t.Fatalf("library files added = %v", e.known.added)
+	}
+}
+
+func TestNestedModeDefaultFolder(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.Mode = ModeNested })
+	e.api.files["a"] = []byte("x")
+	e.send(photoMsg(1, "a"))
+	e.api.reply(t)
+	if got := e.ls(t, "telegram"); !slices.Equal(got, []string{"alice"}) {
+		t.Fatalf("folders = %v", got)
+	}
+}
+
 func TestModeAndFolderValidation(t *testing.T) {
 	for _, c := range []struct {
 		cfg   Config
@@ -602,6 +643,7 @@ func TestModeAndFolderValidation(t *testing.T) {
 		{Config{Dir: "x", Mode: ModeSingle, Folder: ".."}, "Folder"},
 		{Config{Dir: "x", Mode: ModeSingle, Folder: ".hidden"}, "Folder"},
 		{Config{Dir: "x", Mode: ModeSingle, Folder: "my memes"}, "Folder"},
+		{Config{Dir: "x", Mode: ModeNested, Folder: "a/b"}, "Folder"},
 	} {
 		fields, _ := configerr.Fields(c.cfg.Validate())
 		if len(fields) != 1 || fields[0].Name != c.field {
@@ -609,7 +651,7 @@ func TestModeAndFolderValidation(t *testing.T) {
 		}
 	}
 	for _, ok := range []Config{
-		{Dir: "x"}, {Dir: "x", Mode: ModePerUser}, {Dir: "x", Mode: ModeSingle},
+		{Dir: "x"}, {Dir: "x", Mode: ModePerUser}, {Dir: "x", Mode: ModeSingle}, {Dir: "x", Mode: ModeNested},
 		{Dir: "x", Mode: ModeSingle, Folder: "Telegram_memes-2"}, {Dir: "x", Mode: ModeSingle, Folder: "мемы"},
 	} {
 		if err := ok.Validate(); err != nil {

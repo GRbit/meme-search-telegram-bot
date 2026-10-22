@@ -187,8 +187,13 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 }
 
 func (m *Module) saveFolder(from *models.User) string {
-	if m.cfg.Mode == ModeSingle {
+	switch m.cfg.Mode {
+	case ModeSingle:
 		return filepath.Join(m.cfg.Dir, m.cfg.Folder)
+	case ModeNested:
+		// No DirPrefix: the parent already marks these as bot folders, and the
+		// meme-search path becomes "<Folder>/<sender>".
+		return filepath.Join(m.cfg.Dir, m.cfg.Folder, senderName(from))
 	}
 	return filepath.Join(m.cfg.Dir, m.cfg.DirPrefix+senderName(from))
 }

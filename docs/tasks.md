@@ -99,7 +99,11 @@ New saver backend: `POST /api/v2/memes` with a `media:write` token into a chosen
 a shared volume and the meme is searchable without waiting for a rescan. Keep the folder writer for setups
 without the write API.
 
-### 2.7 Nested save folders (needs L)
+### 2.7 Nested save folders (needs L) - done
+
+Done as specified. The user folder is the bare sender name (`telegram/alice/`), without `SAVE_DIR_PREFIX`,
+matching L's `telegram/<user>/`. Nothing to detect: the bot only writes files, and on a server without L the
+owner simply does not choose this mode.
 
 `SAVE_MODE=nested`: every saver gets `SAVE_DIR/<SAVE_FOLDER>/<user>/` (one level, like L supports). With the parent
 registered once in meme-search with "include subfolders", a user added to `SAVE_USER_IDS` is searchable after
