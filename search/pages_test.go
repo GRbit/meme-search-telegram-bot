@@ -5,16 +5,21 @@ import (
 	"time"
 
 	"github.com/go-telegram/bot/models"
+
+	"github.com/grbit/meme-search-telegram-bot/configerr"
+	"github.com/grbit/meme-search-telegram-bot/memesearch"
 )
 
-func TestPageStoreBoundedAndTTL(t *testing.T) {
+// Sessions without memes (an empty result kept for "Search everywhere") count
+// as one meme each, so the budget also bounds how many of them are stored.
+func TestPageStoreEmptySessionsCountAndTTL(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	p := newPageStore(time.Hour, 3)
 	toks := make([]string, 3)
 	for i := range toks {
 		toks[i] = p.put(&session{created: t0.Add(time.Duration(i) * time.Minute)}, t0)
 	}
-	// Full: the oldest live session makes room.
+	// Full: the least recently used live session makes room.
 	newest := p.put(&session{created: t0.Add(10 * time.Minute)}, t0.Add(10*time.Minute))
 	if p.len() != 3 || p.get(toks[0], t0.Add(10*time.Minute)) != nil || p.get(newest, t0.Add(10*time.Minute)) == nil {
 		t.Fatalf("len=%d", p.len())
@@ -108,8 +113,7 @@ func TestCommandName(t *testing.T) {
 
 func TestPageStoreMemeBudgetEvictsLeastRecentlyUsed(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	p := newPageStore(time.Hour, 100)
-	p.maxMemes = 50
+	p := newPageStore(time.Hour, 50)
 	a := p.put(&session{created: t0, memes: memeRange(20)}, t0)
 	b := p.put(&session{created: t0.Add(time.Minute), memes: memeRange(20)}, t0.Add(time.Minute))
 	if p.get(a, t0.Add(2*time.Minute)) == nil { // a is now used more recently than b
@@ -132,11 +136,35 @@ func TestPageStoreMemeBudgetEvictsLeastRecentlyUsed(t *testing.T) {
 	}
 }
 
-// The defaults keep a small VPS safe: at most about 20k memes with their
-// descriptions in memory, over at most 1000 sessions.
-func TestPageStoreDefaults(t *testing.T) {
-	p := newPageStore(time.Hour, maxSessions)
-	if p.max != 1000 || p.maxMemes != 20_000 {
-		t.Fatalf("max sessions = %d, meme budget = %d", p.max, p.maxMemes)
+// The default keeps a small VPS safe: at most about 20k memes with their
+// descriptions in memory.
+func TestPageStoreDefault(t *testing.T) {
+	if maxStoredMemes != 20_000 {
+		t.Fatalf("default meme budget = %d", maxStoredMemes)
+	}
+}
+
+func TestPageStoreBoundsFromConfig(t *testing.T) {
+	e := newEnv(t, &fakeAPI{}, &fakeMedia{uploads: true})
+	if e.mod.pages.maxMemes != maxStoredMemes {
+		t.Fatalf("zero config: memes = %d", e.mod.pages.maxMemes)
+	}
+	e = newEnv(t, &fakeAPI{}, &fakeMedia{uploads: true}, func(c *Config, _ *Deps) { c.PageMemes = 500 })
+	if e.mod.pages.maxMemes != 500 {
+		t.Fatalf("custom: memes = %d", e.mod.pages.maxMemes)
+	}
+}
+
+func TestPageBoundsValidate(t *testing.T) {
+	for _, ok := range []Config{{PageMemes: memesearch.MaxLimit}, {PageMemes: 100_000}} {
+		if err := ok.Validate(); err != nil {
+			t.Errorf("%+v: %v", ok, err)
+		}
+	}
+	for _, bad := range []Config{{PageMemes: -1}, {PageMemes: memesearch.MaxLimit - 1}} {
+		fields, _ := configerr.Fields(bad.Validate())
+		if len(fields) != 1 {
+			t.Errorf("%+v: fields = %+v", bad, fields)
+		}
 	}
 }

@@ -46,6 +46,11 @@ type Config struct {
 	ResultsPerPage int             // 1..10 (Telegram album limit); 0 means 5
 	Mode           memesearch.Mode // "" means memesearch.ModeVector
 	PageTTL        time.Duration   // how long fetched results stay pageable; 0 means 1h
+	// PageMemes caps the memes kept for paging over all searches, at least
+	// memesearch.MaxLimit (one fetch); 0 means 20000. The least recently used
+	// search goes first; one without results counts as one meme. A stored meme
+	// with its description takes roughly 0.5-1 KB.
+	PageMemes int
 	// InlineResults is how many memes one inline query asks for, 1..memesearch.MaxLimit (the API's cap); 0
 	// means 3. Every miss among them is queued for upload, so a small number keeps the queue short.
 	InlineResults  int
@@ -66,6 +71,11 @@ func (c Config) Validate() error {
 	case "", memesearch.ModeVector, memesearch.ModeKeyword:
 	default:
 		errs = append(errs, &configerr.Field{Name: "Mode", Reason: fmt.Sprintf("must be %q or %q, got %q", memesearch.ModeVector, memesearch.ModeKeyword, c.Mode)})
+	}
+	if c.PageMemes < 0 || (c.PageMemes > 0 && c.PageMemes < memesearch.MaxLimit) {
+		// Below one fetch every new search would evict all others and could not hold itself.
+		errs = append(errs, &configerr.Field{Name: "PageMemes",
+			Reason: fmt.Sprintf("must be at least %d, one fetch of results (0 means %d)", memesearch.MaxLimit, maxStoredMemes)})
 	}
 	if c.PageTTL < 0 {
 		errs = append(errs, &configerr.Field{Name: "PageTTL", Reason: "must not be negative"})
@@ -208,6 +218,9 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	if cfg.Mode == "" {
 		cfg.Mode = memesearch.ModeVector
 	}
+	if cfg.PageMemes == 0 {
+		cfg.PageMemes = maxStoredMemes
+	}
 	if cfg.PageTTL == 0 {
 		cfg.PageTTL = defaultPageTTL
 	}
@@ -232,7 +245,7 @@ func New(cfg Config, deps Deps) (*Module, error) {
 		deps:  deps,
 		log:   log,
 		now:   now,
-		pages: newPageStore(cfg.PageTTL, maxSessions),
+		pages: newPageStore(cfg.PageTTL, cfg.PageMemes),
 		after: realAfter,
 
 		groupDefault: parseOverrides(cfg.InlineGroupScope),

@@ -18,11 +18,9 @@ const (
 	// everywherePrefix reruns a session's query without tags and folders.
 	everywherePrefix = CallbackPrefix + "e:"
 
-	// maxSessions and maxStoredMemes keep paging memory small enough for a
-	// small VPS: a meme with its description is roughly 0.5-1 KB, so the meme
-	// budget is about 10-20 MB at worst. An evicted session's "More" answers
-	// "search again".
-	maxSessions    = 1000
+	// maxStoredMemes is the default of Config.PageMemes, small enough for a
+	// small VPS: a meme with its description is roughly 0.5-1 KB, so about
+	// 10-20 MB at worst. An evicted session's "More" answers "search again".
 	maxStoredMemes = 20_000
 )
 
@@ -63,41 +61,38 @@ func (s *session) snapshot() ([]memesearch.Meme, int) {
 // pageStore keeps sessions in memory; a restart loses them and the user gets
 // search.expired, which is acceptable for a 1h paging window.
 //
-// Two bounds: a session count, and a total of stored memes, since offset
-// paging lets one session hold 220 memes with their descriptions. Over either,
-// the least recently used session goes first.
+// One bound: the total of stored memes, since offset paging lets one session
+// hold 220 memes with their descriptions. Over it, the least recently used
+// session goes first. A session without memes (an empty result kept for
+// "Search everywhere") counts as one, so those cannot pile up either.
 type pageStore struct {
 	mu       sync.Mutex
 	ttl      time.Duration
-	max      int
 	maxMemes int
 	total    int // memes counted over all sessions
 	byID     map[string]*session
 }
 
-func newPageStore(ttl time.Duration, maxN int) *pageStore {
-	return &pageStore{ttl: ttl, max: maxN, maxMemes: maxStoredMemes, byID: map[string]*session{}}
+func newPageStore(ttl time.Duration, maxMemes int) *pageStore {
+	return &pageStore{ttl: ttl, maxMemes: maxMemes, byID: map[string]*session{}}
 }
 
 // put stores s under a fresh token. Expired sessions are dropped first, then
-// least recently used ones while a bound is exceeded.
+// least recently used ones while the budget is exceeded.
 func (p *pageStore) put(s *session, now time.Time) string {
 	tok := newToken()
-	n := len(s.memes) // s is not shared yet
+	n := max(len(s.memes), 1) // s is not shared yet
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	s.token = tok
 	s.used = s.created
 	s.counted = n
-	if len(p.byID) >= p.max || p.total+n > p.maxMemes {
+	if p.total+n > p.maxMemes {
 		for k, v := range p.byID {
 			if p.expired(v, now) {
 				p.remove(k)
 			}
 		}
-	}
-	for len(p.byID) >= p.max {
-		p.evictLRU(nil)
 	}
 	p.byID[tok] = s
 	p.total += n

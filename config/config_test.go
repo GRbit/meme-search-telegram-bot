@@ -63,6 +63,7 @@ func TestDefaults(t *testing.T) {
 	want.Search.Mode = memesearch.ModeVector
 	want.Search.InlineResults = 3
 	want.Search.InlineDebounce = time.Second
+	want.Search.PageMemes = 20000
 	want.Media.CacheChatID = 0
 	want.Media.LibraryDir = filepath.Join(exe, "memes")
 	want.Media.WarmupInterval = 6 * time.Hour
@@ -502,5 +503,17 @@ func TestTableConsistency(t *testing.T) {
 func TestNoSeparateUploadToken(t *testing.T) {
 	if s := mustLoad(t, required(), t.TempDir()).Summary(); strings.Contains(s, "UPLOAD_TOKEN") {
 		t.Fatalf("summary lists an upload token:\n%s", s)
+	}
+}
+
+func TestPageMemes(t *testing.T) {
+	if c := mustLoad(t, env("PAGE_MEMES=500"), t.TempDir()); c.Search.PageMemes != 500 {
+		t.Fatalf("env: memes = %d", c.Search.PageMemes)
+	}
+	if s := mustLoad(t, required(), t.TempDir()).Summary(); strings.Contains(s, "PAGE_SESSIONS") {
+		t.Fatalf("a session cap is still configurable:\n%s", s)
+	}
+	if _, err := Load(env("PAGE_MEMES=10"), t.TempDir()); err == nil || !strings.Contains(err.Error(), "PAGE_MEMES") {
+		t.Fatalf("budget below one fetch: err = %v", err)
 	}
 }

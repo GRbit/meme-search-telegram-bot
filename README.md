@@ -328,6 +328,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `MEME_SEARCH_API_TOKEN` | required | API token with `search:read,media:read`; add `media:write` to allow uploads (newer meme-search only) |
 | `MEME_SEARCH_TIMEOUT` | `30s` | Timeout of one API request |
 | `RESULTS_PER_PAGE` | `5` | Memes per page in private chat, 1-10 |
+| `PAGE_MEMES` | `20000` | Memes kept in memory for "More" over all searches, at least 20; the least recently used search goes first. About 0.5-1 KB each, so 20000 is about 10-20 MB |
 | `SEARCH_MODE` | `vector` | `vector` (semantic) or `keyword` |
 | `INLINE_RESULTS` | `3` | Memes per inline query, 1-20; uncached ones are queued for upload |
 | `INLINE_GROUP_SCOPE` | empty | Default `#tag`/`dir:` filters of inline queries typed in groups, quoted; see [Filters](#filters) |
