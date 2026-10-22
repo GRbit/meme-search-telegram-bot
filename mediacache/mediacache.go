@@ -166,12 +166,11 @@ type Cache struct {
 	scans   atomic.Int64
 	rescan  chan struct{} // the feed saw files the index lacks
 
-	lister       MemeLister
-	caps         memesearch.CapabilitySource
-	feedListener func(context.Context, []memesearch.Meme) // guarded by mu
-	feedMu       sync.Mutex                               // one poll at a time: the cursor is shared
-	feedLimit    int
-	feedPages    int
+	lister    MemeLister
+	caps      memesearch.CapabilitySource
+	feedMu    sync.Mutex // one poll at a time: the cursor is shared
+	feedLimit int
+	feedPages int
 }
 
 // New validates the config and applies the cache's migrations.

@@ -26,15 +26,6 @@ const DefaultFeedInterval = time.Minute
 // spread over several polls instead of hitting 429.
 const defaultFeedPages = 20
 
-// OnFeed registers f to receive every non-empty page of the change feed (new
-// and changed memes, oldest change first). Call it before Run; f runs on the
-// feed goroutine, so it must not block for long.
-func (c *Cache) OnFeed(f func(ctx context.Context, memes []memesearch.Meme)) {
-	c.mu.Lock()
-	c.feedListener = f
-	c.mu.Unlock()
-}
-
 func (c *Cache) feedEnabled() bool { return c.lister != nil && c.caps != nil }
 
 // feedLoop polls the feed every FeedInterval. It does not poll at startup:
@@ -115,16 +106,10 @@ func (c *Cache) feedErr(ctx context.Context, err error) {
 	}
 }
 
-// handleFeed passes a page to the listener and settles warmup: with a library
+// handleFeed settles warmup for a feed page: with a library
 // a new file is indexed by an early rescan (the scan reads the file, not the
 // API); without one the memes are uploaded from the API.
 func (c *Cache) handleFeed(ctx context.Context, memes []memesearch.Meme) {
-	c.mu.Lock()
-	listener := c.feedListener
-	c.mu.Unlock()
-	if listener != nil {
-		listener(ctx, memes)
-	}
 	if dir, _ := c.libraryDir(); dir != "" {
 		c.rescanForUnknown(ctx, memes)
 		return

@@ -169,8 +169,7 @@ With `SAVE_BACKEND=api` the bot uploads saved memes through meme-search's upload
 is needed. The API fills only folders registered in meme-search: an unregistered save folder, or a server
 without the upload API, makes the bot write the file as usual. Without a shared volume, use `SAVE_MODE=single`
 with a registered `SAVE_FOLDER`.
-If meme-search has the meme listing (`GET /api/v1/memes`), the bot replies to a saved meme once search can
-find it (or once its description failed), one reply per album (`SAVE_NOTIFY=false` turns this off). The same change feed lets the bot warm up new
+If meme-search has the meme listing (`GET /api/v1/memes`), the bot follows its change feed to warm up new
 memes within `FEED_INTERVAL`, and without `LIBRARY_DIR` straight from the API.
 
 Files are written as uid 1000 (the image's default, the same as meme-search's upload folder). If your folder
@@ -345,7 +344,6 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 | `SAVE_DIR_PREFIX` | `tg-` | Prefix of per-user save folders (`per_user` mode) |
 | `SAVE_NOTE` | empty | Text added to the "Saved" reply |
 | `SAVE_BACKEND` | `folder` | `folder`: write files; `api`: upload through meme-search's API (API token needs `media:write`), files as fallback |
-| `SAVE_NOTIFY` | `true` | Reply when a saved meme becomes searchable (servers with the meme listing only) |
 | `SAVE_USER_IDS` | empty | User ids allowed to save; empty disables saving |
 | `TRUSTED_USER_IDS` | empty | User ids with unlimited search |
 | `PUBLIC_DAILY_PER_USER` | `5` | Searches per day for everyone else; `0` disables public search |

@@ -85,7 +85,7 @@ func TestFolderMismatchFallsBackToName(t *testing.T) {
 
 func TestFeedWithFolderKnowsCollidingNames(t *testing.T) {
 	ls := newListServer(t)
-	e, _ := newFeedEnv(t, Config{}, ls, listed())
+	e := newFeedEnv(t, Config{}, ls, listed())
 	e.file("a/x.jpg", "first")
 	e.file("b/other.jpg", "other")
 	e.scan()
@@ -100,7 +100,7 @@ func TestFeedWithFolderKnowsCollidingNames(t *testing.T) {
 // level: the name match counts, or every poll would rescan.
 func TestFeedWithUnknownFolderTrustsTheName(t *testing.T) {
 	ls := newListServer(t, memesearch.Meme{ID: 1, Folder: "memes/a", Filename: "x.jpg", MediaType: "image/jpeg"})
-	e, _ := newFeedEnv(t, Config{}, ls, listed())
+	e := newFeedEnv(t, Config{}, ls, listed())
 	e.file("a/x.jpg", "first")
 	e.scan()
 	e.c.pollFeed(t.Context())

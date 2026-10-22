@@ -21,8 +21,7 @@ acc, _ := access.New(ctx, access.Config{TrustedUserIDs: []int64{me}, PublicDaily
 media, _ := mediacache.New(ctx, mediacache.Config{CacheChatID: cacheChat, LibraryDir: "/memes"},
 	mediacache.Deps{DB: db, API: api, Sender: b, Lister: api, Caps: api, Log: log}) // Lister, Caps: optional feed
 sv, _ := saver.New(saver.Config{Dir: "/memes"}, saver.Deps{Permit: acc, Known: media, I18n: bundle,
-	DB: db, Caps: api, Uploader: api, Log: log}) // all three optional; Uploader for Backend: saver.BackendAPI
-media.OnFeed(sv.MemesChanged)
+	Caps: api, Uploader: api, Log: log}) // Caps, Uploader: only for Backend: saver.BackendAPI
 srch, _ := search.New(search.Config{}, search.Deps{API: api, Media: media, I18n: bundle, DB: db, Log: log,
 	Middlewares: []bot.Middleware{acc.Middleware(search.Chargeable)},
 	OwnFolder:   sv.FolderFor, // optional: the "Only mine" folder shortcut

@@ -4,7 +4,6 @@ package saver
 
 import (
 	"context"
-	"database/sql"
 	"embed"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -48,11 +46,8 @@ type Config struct {
 	// Folder is the one folder of ModeSingle and the parent of ModeNested:
 	// letters, digits, "-" and "_" only, so it is a single path element
 	// meme-search can register by name. "" means "telegram".
-	Folder string
-	// NoNotify turns off the "searchable now" reply; it is negative so the
-	// zero value keeps the notice on.
-	NoNotify bool
-	Backend  Backend // "" means BackendFolder
+	Folder  string
+	Backend Backend // "" means BackendFolder
 }
 
 // Backend chooses how a saved meme reaches meme-search.
@@ -149,14 +144,10 @@ type Deps struct {
 	I18n   *i18n.Bundle
 	Log    *slog.Logger
 	HTTP   *http.Client     // downloads files from Telegram; nil means http.DefaultClient
-	Now    func() time.Time // nil means time.Now; dates messages without one, ages pending notices
-	// DB and Caps enable the "searchable now" notice; both are optional. It
-	// is used only while Caps reports the server's change feed (listing),
-	// where description_status arrives; feed pages come in via MemesChanged.
-	DB   *sql.DB
-	Caps memesearch.CapabilitySource
-	// Uploader is required with BackendAPI (with Caps, which says whether the
-	// server takes uploads); *memesearch.HTTPClient implements it.
+	Now    func() time.Time // nil means time.Now; used only for messages without a date
+	// Caps and Uploader are required with BackendAPI: Caps says whether the
+	// server takes uploads; *memesearch.HTTPClient implements both.
+	Caps     memesearch.CapabilitySource
 	Uploader Uploader
 }
 
@@ -177,8 +168,6 @@ type Module struct {
 	hashes folderHashes
 	albums *albums
 	httpc  *http.Client
-	// bot is the one Register got; MemesChanged runs outside any update.
-	bot atomic.Pointer[bot.Bot]
 	// unregistered holds folders the upload API refused, so the owner sees one
 	// Info line per folder until it is registered, not one per save.
 	unregistered sync.Map
@@ -231,11 +220,6 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	if httpc == nil {
 		httpc = http.DefaultClient
 	}
-	if deps.DB != nil {
-		if err := migrate(deps.DB); err != nil {
-			return nil, err
-		}
-	}
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
 		return nil, fmt.Errorf("saver: create dir: %w", err)
 	}
@@ -253,6 +237,5 @@ func New(cfg Config, deps Deps) (*Module, error) {
 
 // Register attaches the module's handlers.
 func (m *Module) Register(b *bot.Bot) {
-	m.bot.Store(b)
 	b.RegisterHandlerMatchFunc(m.match, m.handle)
 }

@@ -324,10 +324,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   `WARMUP_INTERVAL` the still-pending ones are queued again, a 404 or non-photo content drops the row. Deleted memes
   are not in the feed; the periodic full relisting the API docs suggest is skipped, as a missed change is followed
   by the description change anyway.
-- "Searchable now" notice: the saver records each written file in `saver_pending` (only while the server has the
-  listing) keyed by the message it replied to, and `MemesChanged` (fed by `mediacache.Cache.OnFeed`) marks rows
-  ready or failed by base name. One reply per message or album once nothing in it is pending; rows older than 7
-  days are dropped silently (e.g. a folder not registered in meme-search).
+- The "searchable now" notice of tasks 2.3 was removed on the owner's decision. Its `saver_pending` table was
+  never released; a database that ran that migration keeps a harmless unused table.
 - Folder matching (tasks 2.1, mediacache side): a meme with `folder` is looked up at `<folder>/<filename>` in the
   library index first, since `LIBRARY_DIR` is meme-search's memes root; a hit settles name collisions without
   downloading the content to compare hashes. No row there (an older server without the field, or `LIBRARY_DIR`
@@ -336,7 +334,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   otherwise every poll in such a setup would rescan.
 - Save through the API (tasks 2.6): `SAVE_BACKEND=api` uploads each saved file (API token with `media:write`) into
   `FolderFor`'s folder, `generate_description=true`, while the probe reports the upload capability. Created ->
-  "Saved" (and the searchable notice tracks the stored name), duplicate in folder -> "Already saved", per-file
+  "Saved", duplicate in folder -> "Already saved", per-file
   error or a failed request -> "Could not save". `ErrUnsupported` and `422 invalid_folder` fall back to the folder
   writer, which creates the folder for the owner (or upstream L) to register. No local file means no
   `AddLibraryFile`; the feed warms the meme up.

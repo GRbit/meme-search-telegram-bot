@@ -39,7 +39,6 @@ type fakeAPI struct {
 	paths     map[string]string // file_id -> file_path override
 	downloads int
 	sent      []string
-	replyTo   []int // reply_parameters.message_id per sent message
 	sentCh    chan string
 }
 
@@ -86,12 +85,6 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(r.URL.Path, "/sendMessage"):
 		text, _ := p["text"].(string)
 		f.sent = append(f.sent, text)
-		rp, _ := p["reply_parameters"].(map[string]any)
-		if raw, ok := p["reply_parameters"].(string); ok { // multipart sends it as JSON text
-			_ = json.Unmarshal([]byte(raw), &rp)
-		}
-		id, _ := rp["message_id"].(float64)
-		f.replyTo = append(f.replyTo, int(id))
 		f.sentCh <- text
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":1,"type":"private"}}}`))
 	default:
