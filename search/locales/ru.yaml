@@ -63,3 +63,4 @@ search.tags_unavailable: "Сервер мемов сейчас не может �
 search.scope_tags_all: "все теги: {{.Tags}}"
 search.tag_match_unsupported: "Сервер мемов не умеет требовать все теги, поэтому искались мемы с любым из них."
 search.no_more: "Больше ничего нет."
+search.query_folders_too_many: "Слишком много папок: не больше {{.Max}}, каждая до {{.Len}} символов."

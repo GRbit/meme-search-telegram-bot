@@ -127,6 +127,12 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 			map[string]any{"Tag": longestTag(o.tags), "Len": memesearch.MaxTagLen}), nil)
 		return
 	}
+	if !foldersOK(o.folders) {
+		m.log.DebugContext(ctx, "search: too many or too long folders in query", "user_id", user, "count", len(o.folders))
+		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.query_folders_too_many",
+			map[string]any{"Max": memesearch.MaxFolders, "Len": memesearch.MaxFolderLen}), nil)
+		return
+	}
 	folders, unknown := m.resolveFolders(ctx, o.folders)
 	if len(unknown) > 0 {
 		m.log.DebugContext(ctx, "search: unknown folder in query", "user_id", user, "folders", unknown)
@@ -433,7 +439,7 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 	user := iq.From.ID
 	o := parseOverrides(iq.Query)
 	q, ok := searchQuery(o.query)
-	ok = ok && tagProblemOf(o.tags) == tagsOK
+	ok = ok && tagProblemOf(o.tags) == tagsOK && foldersOK(o.folders)
 	m.log.DebugContext(ctx, "search: inline", "update", "inline_query", "user_id", user, "query", q,
 		"query_len", utf8.RuneCountInString(q), "chat_type", iq.ChatType, "tags", o.tags, "folders", o.folders)
 	// Telegram sends a query per keystroke; only the one the user stopped at

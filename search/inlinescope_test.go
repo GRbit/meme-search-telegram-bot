@@ -1,7 +1,9 @@
 package search
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/go-telegram/bot/models"
@@ -77,7 +79,8 @@ func TestInlineGroupScopeDefault(t *testing.T) {
 }
 
 func TestInlineGroupScopeValidation(t *testing.T) {
-	for _, bad := range []string{"words #x", "#1 #2 #3 #4 #5 #6 #7 #8 #9 #10 #11", "#123456789012345678901"} {
+	for _, bad := range []string{"words #x", "#1 #2 #3 #4 #5 #6 #7 #8 #9 #10 #11", "#123456789012345678901",
+		manyDirs(memesearch.MaxFolders + 1), "dir:" + strings.Repeat("f", memesearch.MaxFolderLen+1)} {
 		fields, _ := configerr.Fields((Config{InlineGroupScope: bad}).Validate())
 		if len(fields) != 1 || fields[0].Name != "InlineGroupScope" {
 			t.Errorf("%q: fields = %+v", bad, fields)
@@ -88,4 +91,12 @@ func TestInlineGroupScopeValidation(t *testing.T) {
 			t.Errorf("%q: %v", ok, err)
 		}
 	}
+}
+
+func manyDirs(n int) string {
+	var parts []string
+	for i := range n {
+		parts = append(parts, fmt.Sprintf("dir:f%d", i))
+	}
+	return strings.Join(parts, " ")
 }

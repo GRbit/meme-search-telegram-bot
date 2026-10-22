@@ -290,3 +290,35 @@ func TestUnknownFolderNotChargedWithCachedList(t *testing.T) {
 		t.Fatalf("stale list: charged=%q", charged)
 	}
 }
+
+// More folders than the API takes would fail every search with that scope,
+// so they are refused where they are typed, uncharged, without a request.
+func TestTooManyFoldersRefused(t *testing.T) {
+	api := &fakeAPI{results: memeRange(1)}
+	e := newEnv(t, api, &fakeMedia{uploads: true, known: map[int64]string{1: "f1"}})
+	e.tg.admins = []int64{7}
+	many := manyDirs(memesearch.MaxFolders + 1)
+
+	if Chargeable(textUpdate(many + " cat")) {
+		t.Fatal("too many folders charged in a text search")
+	}
+	e.process(textUpdate(many + " cat"))
+	if txt := e.lastSent(t, "sendMessage").fields["text"]; !strings.Contains(txt, "at most 10 folders") {
+		t.Fatalf("text reply = %q", txt)
+	}
+	if Chargeable(inlineUpdate(many + " cat")) {
+		t.Fatal("too many folders charged inline")
+	}
+	e.process(inlineUpdate(many + " cat"))
+
+	e.process(groupCmd("/memescope set "+many, 7))
+	if txt := e.lastSent(t, "sendMessage").fields["text"]; !strings.Contains(txt, "at most 10 folders") {
+		t.Fatalf("group reply = %q", txt)
+	}
+	if g, _ := e.mod.groupByChat(t.Context(), groupID); g != nil {
+		t.Fatalf("scope saved: %+v", g)
+	}
+	if api.searchCount() != 0 {
+		t.Fatalf("searches = %q", api.searches)
+	}
+}

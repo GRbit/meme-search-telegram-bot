@@ -214,6 +214,10 @@ func (m *Module) handleGroupScope(ctx context.Context, b *bot.Bot, u *models.Upd
 			reply("search.query_tag_too_long", map[string]any{"Tag": longestTag(o.tags), "Len": memesearch.MaxTagLen})
 			return
 		}
+		if !foldersOK(o.folders) {
+			reply("search.query_folders_too_many", map[string]any{"Max": memesearch.MaxFolders, "Len": memesearch.MaxFolderLen})
+			return
+		}
 		folders, unknown := m.resolveFolders(ctx, o.folders)
 		if len(unknown) > 0 {
 			m.log.DebugContext(ctx, "search: unknown folder in group scope", "chat_id", chat, "folders", unknown)

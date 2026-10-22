@@ -71,3 +71,17 @@ func tagProblemOf(tags []string) tagProblem {
 	}
 	return tagsOK
 }
+
+// foldersOK checks typed folders against the API limits: more would fail
+// every search of that scope in the client's local check.
+func foldersOK(folders []string) bool {
+	if len(folders) > memesearch.MaxFolders {
+		return false
+	}
+	for _, f := range folders {
+		if utf8.RuneCountInString(f) > memesearch.MaxFolderLen {
+			return false
+		}
+	}
+	return true
+}

@@ -79,6 +79,9 @@ func (c Config) Validate() error {
 	} else if tagProblemOf(o.tags) != tagsOK {
 		errs = append(errs, &configerr.Field{Name: "InlineGroupScope",
 			Reason: fmt.Sprintf("at most %d tags of at most %d characters", memesearch.MaxTags, memesearch.MaxTagLen)})
+	} else if !foldersOK(o.folders) {
+		errs = append(errs, &configerr.Field{Name: "InlineGroupScope",
+			Reason: fmt.Sprintf("at most %d folders of at most %d characters", memesearch.MaxFolders, memesearch.MaxFolderLen)})
 	}
 	if c.InlineResults < 0 || c.InlineResults > memesearch.MaxLimit {
 		errs = append(errs, &configerr.Field{Name: "InlineResults", Reason: fmt.Sprintf("must be 1..%d (0 means %d)", memesearch.MaxLimit, defaultInlineResults)})
@@ -269,11 +272,11 @@ func Chargeable(u *models.Update) bool {
 	case isTextSearch(u):
 		o := parseOverrides(u.Message.Text)
 		_, ok := searchQuery(o.query)
-		return ok && tagProblemOf(o.tags) == tagsOK
+		return ok && tagProblemOf(o.tags) == tagsOK && foldersOK(o.folders)
 	case isInline(u):
 		o := parseOverrides(u.InlineQuery.Query)
 		_, ok := searchQuery(o.query)
-		return ok && tagProblemOf(o.tags) == tagsOK
+		return ok && tagProblemOf(o.tags) == tagsOK && foldersOK(o.folders)
 	case u.CallbackQuery != nil:
 		d := u.CallbackQuery.Data
 		return strings.HasPrefix(d, everywherePrefix) || strings.HasPrefix(d, similarPrefix)
