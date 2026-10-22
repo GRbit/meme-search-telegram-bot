@@ -78,15 +78,16 @@ func isGroupChatType(t string) bool {
 }
 
 // inlineScope resolves an inline query's scope per dimension, most specific
-// first: the query's own filters, the user's settings, then the group default
-// for queries typed in groups. The mode stays Config.Mode: inline answers are a
-// quick grid, and the settings mode is for the private chat.
-//
-// Telegram never says which group a query comes from, so there is no
-// per-group scope; INLINE_GROUP_SCOPE is one default for all groups.
-func (m *Module) inlineScope(p prefs, o overrides, chatType string) scope {
-	const userLayer = 1
-	layers := []overrides{o, {tags: p.Tags, folders: p.Folders}}
+// first: the query's own filters, the group code's scope, the user's
+// settings, then the group default for queries typed in groups. The mode stays Config.Mode: inline
+// answers are a quick grid, and the settings mode is for the private chat.
+func (m *Module) inlineScope(p prefs, o overrides, g *groupScope, chatType string) scope {
+	layers := []overrides{o}
+	if g != nil {
+		layers = append(layers, overrides{tags: g.tags, folders: g.folders})
+	}
+	userLayer := len(layers)
+	layers = append(layers, overrides{tags: p.Tags, folders: p.Folders})
 	if isGroupChatType(chatType) {
 		layers = append(layers, m.groupDefault)
 	}
@@ -94,7 +95,7 @@ func (m *Module) inlineScope(p prefs, o overrides, chatType string) scope {
 	for i, l := range layers {
 		if len(l.tags) > 0 {
 			sc.tags = l.tags
-			// The host's group tags were chosen to be matched any-of; the user's
+			// A group's or the host's tags were chosen to be matched any-of; the user's
 			// own setting applies to their own tags only.
 			if i == 0 || i == userLayer {
 				sc.tagMatch = p.TagMatch

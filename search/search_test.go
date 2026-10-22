@@ -738,12 +738,13 @@ func TestCommandsForTheMenu(t *testing.T) {
 	withInline := newEnv(t, &fakeAPI{}, &fakeMedia{uploads: true}).mod.Commands()
 	want := []string{
 		fmt.Sprintf("start/%d", module.ScopePrivate), fmt.Sprintf("help/%d", module.ScopePrivate),
-		fmt.Sprintf("settings/%d", module.ScopePrivate),
+		fmt.Sprintf("settings/%d", module.ScopePrivate), fmt.Sprintf("memescope/%d", module.ScopeGroups),
 	}
 	if !slices.Equal(names(withInline), want) {
 		t.Fatalf("commands = %v", names(withInline))
 	}
-	if got := names(newEnv(t, &fakeAPI{}, &fakeMedia{}).mod.Commands()); !slices.Equal(got, want) {
+	// Without inline mode a group scope has no button to pin, so /memescope is not offered.
+	if got := names(newEnv(t, &fakeAPI{}, &fakeMedia{}).mod.Commands()); !slices.Equal(got, want[:3]) {
 		t.Fatalf("commands without inline = %v", got)
 	}
 	// Every description exists in every shipped language.

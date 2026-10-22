@@ -113,10 +113,10 @@ func (m *Module) effectiveMode(p prefs) memesearch.Mode {
 func (m *Module) handleSettingsCallback(ctx context.Context, b *bot.Bot, cq *models.CallbackQuery) {
 	switch {
 	case strings.HasPrefix(cq.Data, folderPrefix):
-		m.handlePicker(ctx, b, cq, m.folderPicker())
+		m.handlePicker(ctx, b, cq, m.folderPicker(m.userTarget()))
 		return
 	case strings.HasPrefix(cq.Data, tagPrefix):
-		m.handlePicker(ctx, b, cq, m.tagPicker())
+		m.handlePicker(ctx, b, cq, m.tagPicker(m.userTarget()))
 		return
 	}
 	user := cq.From.ID

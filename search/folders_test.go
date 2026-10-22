@@ -234,6 +234,22 @@ func TestInlineSendsFolders(t *testing.T) {
 	}
 }
 
+func TestGroupScopeFolders(t *testing.T) {
+	api := &fakeAPI{results: memeRange(1)}
+	srv := newServer(api, "work/reactions")
+	e := newEnv(t, api, &fakeMedia{uploads: true, known: map[int64]string{1: "f1"}}, withServer(srv))
+	e.tg.admins = []int64{7}
+	e.process(groupCmd("/memescope set dir:Work/Reactions", 7))
+	txt := e.lastSent(t, "sendMessage").fields["text"]
+	if strings.Contains(txt, foldersNote) || !strings.Contains(txt, "work/reactions") {
+		t.Fatalf("button message = %q", txt)
+	}
+	e.process(groupCmd("/memescope set dir:nope", 7))
+	if txt := e.lastSent(t, "sendMessage").fields["text"]; !strings.Contains(txt, "nope") {
+		t.Fatalf("unknown folder reply = %q", txt)
+	}
+}
+
 // An unknown dir: name is refused before the access middleware charges, when
 // the folder list is already cached; the check never fetches the list itself.
 func TestUnknownFolderNotChargedWithCachedList(t *testing.T) {
@@ -280,6 +296,7 @@ func TestUnknownFolderNotChargedWithCachedList(t *testing.T) {
 func TestTooManyFoldersRefused(t *testing.T) {
 	api := &fakeAPI{results: memeRange(1)}
 	e := newEnv(t, api, &fakeMedia{uploads: true, known: map[int64]string{1: "f1"}})
+	e.tg.admins = []int64{7}
 	many := manyDirs(memesearch.MaxFolders + 1)
 
 	if Chargeable(textUpdate(many + " cat")) {
@@ -293,6 +310,14 @@ func TestTooManyFoldersRefused(t *testing.T) {
 		t.Fatal("too many folders charged inline")
 	}
 	e.process(inlineUpdate(many + " cat"))
+
+	e.process(groupCmd("/memescope set "+many, 7))
+	if txt := e.lastSent(t, "sendMessage").fields["text"]; !strings.Contains(txt, "at most 10 folders") {
+		t.Fatalf("group reply = %q", txt)
+	}
+	if g, _ := e.mod.groupByChat(t.Context(), groupID); g != nil {
+		t.Fatalf("scope saved: %+v", g)
+	}
 	if api.searchCount() != 0 {
 		t.Fatalf("searches = %q", api.searches)
 	}

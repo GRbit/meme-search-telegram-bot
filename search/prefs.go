@@ -31,8 +31,6 @@ var migrations = []string{
 		updated_at INTEGER NOT NULL
 	)`,
 	`ALTER TABLE search_prefs ADD COLUMN tag_match TEXT NOT NULL DEFAULT ''`,
-	// Per-group scopes were dropped (Telegram never says which group an inline query comes from).
-	`DROP TABLE IF EXISTS search_group_scopes`,
 }
 
 // prefs are one user's saved search settings. Zero values mean the host's

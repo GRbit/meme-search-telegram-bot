@@ -22,12 +22,39 @@ const (
 	tagPrefix      = settingsPrefix + "tg:"
 )
 
+// pickTarget is where a picker's selection lives: a user's settings or a
+// group's scope.
+type pickTarget struct {
+	prefix string // settingsPrefix or groupPickPrefix; pickers add "f:" or "tg:"
+	load   func(ctx context.Context, cq *models.CallbackQuery) (prefs, error)
+	save   func(ctx context.Context, cq *models.CallbackQuery, p prefs) error
+	// back shows the view the picker was opened from.
+	back func(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, cq *models.CallbackQuery, p prefs)
+	// ownFolder offers "Only mine": a group has no save folder of its own.
+	ownFolder bool
+}
+
+func (m *Module) userTarget() pickTarget {
+	return pickTarget{
+		prefix: settingsPrefix,
+		load: func(ctx context.Context, cq *models.CallbackQuery) (prefs, error) {
+			return m.loadPrefs(ctx, cq.From.ID), nil
+		},
+		save: func(ctx context.Context, cq *models.CallbackQuery, p prefs) error {
+			return m.savePrefs(ctx, cq.From.ID, p)
+		},
+		back:      m.showSettings,
+		ownFolder: true,
+	}
+}
+
 type pickItem struct {
 	name  string
 	count int
 }
 
-// picker is one multi-select list (folders, tags) over a server listing in /settings.
+// picker is one multi-select list (folders, tags) over a server listing, for
+// /settings or a group's scope.
 type picker struct {
 	kind   string // for logs
 	prefix string
@@ -39,12 +66,18 @@ type picker struct {
 	set                                                func(*prefs, []string)
 	items                                              func(ctx context.Context) ([]pickItem, bool)
 	// own returns the "Only mine" choice, "" for none; nil means no such button.
-	own func(u *models.User, items []pickItem) string
+	own    func(u *models.User, items []pickItem) string
+	target pickTarget
 }
 
-func (m *Module) folderPicker() picker {
+func (m *Module) folderPicker(t pickTarget) picker {
+	var own func(*models.User, []pickItem) string
+	if t.ownFolder {
+		own = m.ownFolder
+	}
 	return picker{
-		kind: "folders", prefix: folderPrefix, max: memesearch.MaxFolders,
+		target: t,
+		kind:   "folders", prefix: t.prefix + "f:", max: memesearch.MaxFolders,
 		titleID: "search.folder_picker", noneID: "search.folders_all", clearID: "search.folder_picker_all",
 		tooManyID: "search.folder_too_many", unavailableID: "search.folders_unavailable",
 		get: func(p prefs) []string { return p.Folders },
@@ -57,13 +90,14 @@ func (m *Module) folderPicker() picker {
 			}
 			return out, ok
 		},
-		own: m.ownFolder,
+		own: own,
 	}
 }
 
-func (m *Module) tagPicker() picker {
+func (m *Module) tagPicker(t pickTarget) picker {
 	return picker{
-		kind: "tags", prefix: tagPrefix, max: memesearch.MaxTags,
+		target: t,
+		kind:   "tags", prefix: t.prefix + "tg:", max: memesearch.MaxTags,
 		titleID: "search.tag_picker", noneID: "search.tags_none", clearID: "search.tag_picker_none",
 		tooManyID: "search.settings_tags_too_many_short", unavailableID: "search.tags_unavailable",
 		get: func(p prefs) []string { return p.Tags },
@@ -157,7 +191,12 @@ func (m *Module) handlePicker(ctx context.Context, b *bot.Bot, cq *models.Callba
 		m.answerCallback(ctx, b, cq.ID, loc.T(pk.unavailableID, nil))
 		return
 	}
-	p := m.loadPrefs(ctx, user)
+	p, err := pk.target.load(ctx, cq)
+	if err != nil {
+		m.log.WarnContext(ctx, "search: picker load failed", "user_id", user, "picker", pk.kind, "err", err)
+		m.answerCallback(ctx, b, cq.ID, loc.T("search.error", nil))
+		return
+	}
 	own := ""
 	if pk.own != nil {
 		own = pk.own(&cq.From, items)
@@ -177,7 +216,7 @@ func (m *Module) handlePicker(ctx context.Context, b *bot.Bot, cq *models.Callba
 	case action == "back":
 		m.log.DebugContext(ctx, "search: picker closed", "user_id", user, "picker", pk.kind)
 		m.answerCallback(ctx, b, cq.ID, "")
-		m.showSettings(ctx, b, loc, cq, p)
+		pk.target.back(ctx, b, loc, cq, p)
 		return
 	case action == "all":
 		chosen = nil
@@ -214,7 +253,7 @@ func (m *Module) handlePicker(ctx context.Context, b *bot.Bot, cq *models.Callba
 		return
 	}
 	pk.set(&p, chosen)
-	if err := m.savePrefs(ctx, user, p); err != nil {
+	if err := pk.target.save(ctx, cq, p); err != nil {
 		m.log.WarnContext(ctx, "search: save picker selection failed", "user_id", user, "picker", pk.kind, "err", err)
 		m.answerCallback(ctx, b, cq.ID, loc.T("search.error", nil))
 		return

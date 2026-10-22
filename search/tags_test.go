@@ -149,27 +149,18 @@ func TestInlineTagMatch(t *testing.T) {
 	api := &fakeAPI{results: memeRange(1)}
 	srv := newServer(api).withTags("cat", "dog")
 	e := newEnv(t, api, &fakeMedia{uploads: true, known: map[int64]string{1: "f1"}}, withServer(srv))
+	e.tg.admins = []int64{7}
 	withSavedTags(e, "cat, dog")
 	e.process(callbackUpdate(userID, "srch:p:match:all"))
 	e.process(inlineUpdate("funny"))
 	if api.opts[0].TagMatch != memesearch.TagMatchAll {
 		t.Fatalf("own tags: %+v", api.opts[0])
 	}
-}
-
-// INLINE_GROUP_SCOPE tags were chosen by the host to match any-of, whatever
-// the user picked for their own tags.
-func TestInlineGroupDefaultTagsMatchAny(t *testing.T) {
-	api := &fakeAPI{results: memeRange(1)}
-	srv := newServer(api).withTags("cat", "dog")
-	e := newEnv(t, api, &fakeMedia{uploads: true, known: map[int64]string{1: "f1"}}, withServer(srv), withGroupScope("#g1 #g2"))
-	withSavedTags(e, "cat, dog")
-	e.process(callbackUpdate(userID, "srch:p:match:all"))
-	e.process(callbackUpdate(userID, "srch:p:clear"))
-	e.process(callbackUpdate(userID, "srch:p:match:all"))
-	e.process(inlineFromChat("funny", "group"))
-	if !slices.Equal(api.opts[0].Tags, []string{"g1", "g2"}) || api.opts[0].TagMatch != "" {
-		t.Fatalf("group default tags must match any: %+v", api.opts[0])
+	e.process(groupCmd("/memescope set #g1 #g2", 7))
+	code := scopeCode(t, e)
+	e.process(inlineUpdate(code + " funny"))
+	if !slices.Equal(api.opts[1].Tags, []string{"g1", "g2"}) || api.opts[1].TagMatch != "" {
+		t.Fatalf("a group's tags must match any: %+v", api.opts[1])
 	}
 }
 
