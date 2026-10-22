@@ -3,7 +3,7 @@
 A Telegram bot for [meme-search](https://github.com/meme-search/meme-search), the self-hosted meme search engine.
 
 - **Search from Telegram.** Send the bot any text and it answers with an album of matching memes, with a
-  "More" button to page through up to 20 results.
+  "More" button to page through up to 20 results (up to 220 on newer meme-search versions).
 - **Search settings.** `/settings` switches between "Smart" (by meaning) and "Words" (by the words of the query)
   search and limits it to tags.
 - **Inline mode.** Type `@yourbot cat` in any chat, pick a meme from the grid, and it is sent there.
@@ -190,7 +190,8 @@ Then open the bot in Telegram and send `/start`.
 
 ## Usage
 
-- Send any text in the private chat to search; "More" pages through up to 20 results.
+- Send any text in the private chat to search; "More" pages through up to 20 results. Newer meme-search versions
+  page further (up to 220): past the first 20 the bot fetches the next 20, and "Page 4 of 4+" says more exist.
 - `/settings` sets your own search mode and tags, kept until you change them:
   - **Smart** (vector search, the default) finds memes by meaning, also across languages.
   - **Words** (keyword search) finds memes containing any word of the query; memes matching more words come
@@ -275,7 +276,8 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 ### Limits
 
 Every text search and inline search by a public user counts as one search; paging
-with "More" is free, it reuses results the bot already has. Telegram sends an inline query on every keystroke,
+with "More" is free, it reuses results the bot already has (or, past the first 20 on newer meme-search versions,
+continues the same search). Telegram sends an inline query on every keystroke,
 so inline queries count once per `INLINE_CHARGE_WINDOW`; queries dropped by `INLINE_DEBOUNCE` count the same way,
 they do not cost extra. Counters are stored in SQLite and reset at midnight in
 `TZ`. Search API v1 allows 60 requests per minute per token; the limits keep public use well below that.

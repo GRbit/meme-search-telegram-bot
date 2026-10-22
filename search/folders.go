@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -158,19 +159,28 @@ func matchFolder(list []memesearch.Folder, typed string) (string, bool) {
 
 // find runs one search within sc. Folders and tag_match are sent only through
 // Server, whose answer says whether they were applied; sc records that.
-func (m *Module) find(ctx context.Context, user int64, q string, sc *scope, limit int) ([]memesearch.Meme, error) {
+//
+// next is the offset of the following page, 0 when there is none. An ignored
+// offset is an error (ErrUnsupported): the answer would be page 1 again.
+func (m *Module) find(ctx context.Context, user int64, q string, sc *scope, limit, offset int) (found []memesearch.Meme, next int, err error) {
 	opts := sc.options(limit)
 	if m.srv == nil {
 		sc.foldersApplied, sc.tagMatchApplied = false, false
-		return m.deps.API.Search(ctx, q, opts)
+		found, err = m.deps.API.Search(ctx, q, opts)
+		return found, 0, err
 	}
 	opts.Folders = sc.folders
+	opts.Offset = offset
 	if sc.wantsAllTags() {
 		opts.TagMatch = memesearch.TagMatchAll
 	}
 	page, err := m.srv.SearchPage(ctx, q, opts)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	if slices.Contains(page.Ignored, memesearch.ParamOffset) {
+		m.log.WarnContext(ctx, "search: server ignored offset, no more pages", "user_id", user, "offset", offset)
+		return nil, 0, fmt.Errorf("search: offset %d: %w", offset, memesearch.ErrUnsupported)
 	}
 	sc.tagMatchApplied = sc.wantsAllTags() && !slices.Contains(page.Ignored, memesearch.ParamTagMatch)
 	if sc.wantsAllTags() && !sc.tagMatchApplied {
@@ -183,7 +193,7 @@ func (m *Module) find(ctx context.Context, user int64, q string, sc *scope, limi
 		m.log.WarnContext(ctx, "search: server ignored the folder filter, results are from all folders",
 			"user_id", user, "folders", sc.folders)
 	}
-	return page.Memes, nil
+	return page.Memes, page.NextOffset, nil
 }
 
 // invalidFolder reports the server's 422 for a folder name it does not know.

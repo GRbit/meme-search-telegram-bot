@@ -304,3 +304,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   and the session has no tags or folders. It falls back to the description query on an older server, when the
   meme is gone (404) or has no embedding yet (empty answer), and always for a filtered session. A rate limit is
   reported as before, not retried as a second request.
+- Offset paging (tasks 2.5): a session keeps the server's `meta.next_offset`; "More" past the fetched memes asks
+  for the next 20 with that offset, appends them (dropping ids already shown or the "Similar" source: the library
+  can shift between requests), and "Page n of m+" says more exist. Only `next_offset` enables it, so an older
+  server pages 20 as before; an ignored offset (downgrade mid-session) ends paging with "No more results" rather
+  than repeating page 1. Fetches are free like paging and serialized per session. Similar by id never pages.

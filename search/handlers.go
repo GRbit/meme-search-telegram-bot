@@ -144,24 +144,24 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 func (m *Module) runSearch(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64, q string, sc scope, exclude int64) {
 	m.log.DebugContext(ctx, "search: scope", "user_id", user, "mode", string(sc.mode), "tags", sc.tags,
 		"folders", sc.folders)
-	found, err := m.find(ctx, user, q, &sc, memesearch.MaxLimit)
+	found, next, err := m.find(ctx, user, q, &sc, memesearch.MaxLimit, 0)
 	if err != nil {
 		m.sendText(ctx, b, chat, m.searchError(ctx, loc, user, err, sc.folders), nil)
 		return
 	}
-	m.showResults(ctx, b, loc, user, chat, q, sc, found, exclude)
+	m.showResults(ctx, b, loc, user, chat, q, sc, found, next, exclude)
 }
 
 // showResults stores a session for found and sends page 1; q and sc are what
 // "Search everywhere" and "Similar" rerun.
 func (m *Module) showResults(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, user, chat int64, q string, sc scope,
-	found []memesearch.Meme, exclude int64,
+	found []memesearch.Meme, next int, exclude int64,
 ) {
 	if exclude != 0 {
 		found = slices.DeleteFunc(found, func(mm memesearch.Meme) bool { return mm.ID == exclude })
 	}
 	m.log.DebugContext(ctx, "search: results", "user_id", user, "count", len(found), "folders_applied", sc.foldersApplied)
-	s := &session{owner: user, chat: chat, memes: found, created: m.now(), query: q, scope: sc}
+	s := &session{owner: user, chat: chat, memes: found, nextOffset: next, created: m.now(), query: q, scope: sc, exclude: exclude}
 	if len(found) == 0 {
 		if !sc.filtered() {
 			m.sendText(ctx, b, chat, loc.T("search.no_results", map[string]any{"Query": q}), nil)
@@ -198,14 +198,19 @@ func (m *Module) searchError(ctx context.Context, loc *i18n.Localizer, user int6
 // button exists only while further pages do: albums cannot carry keyboards.
 func (m *Module) sendPage(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, s *session, tok string, page int) {
 	per := m.cfg.ResultsPerPage
-	pages := pageCount(len(s.memes), per)
-	items := pageSlice(s.memes, page, per)
+	all, next := s.snapshot()
+	pages := pageCount(len(all), per)
+	items := pageSlice(all, page, per)
 	m.log.DebugContext(ctx, "search: sending page", "user_id", s.owner, "page", page, "pages", pages, "items", len(items))
 	if m.deliver(ctx, b, s.chat, items) == 0 {
 		m.sendText(ctx, b, s.chat, loc.T("search.error", nil), nil)
 		return
 	}
-	lines := []string{loc.T("search.page", map[string]any{"Page": page, "Pages": pages})}
+	pagesLabel := strconv.Itoa(pages)
+	if next > 0 {
+		pagesLabel += "+"
+	}
+	lines := []string{loc.T("search.page", map[string]any{"Page": page, "Pages": pagesLabel})}
 	if page == 1 {
 		if len(s.scope.folders) > 0 && !s.scope.foldersApplied {
 			lines = append([]string{loc.T("search.folders_unsupported", nil)}, lines...)
@@ -234,7 +239,8 @@ func (m *Module) pageKeyboard(loc *i18n.Localizer, s *session, tok string, page 
 	per := m.cfg.ResultsPerPage
 	var rows [][]models.InlineKeyboardButton
 	var row []models.InlineKeyboardButton
-	for i, mm := range pageSlice(s.memes, page, per) {
+	all, next := s.snapshot()
+	for i, mm := range pageSlice(all, page, per) {
 		// Without a description there is nothing to search by.
 		if strings.TrimSpace(mm.Description) == "" {
 			continue
@@ -249,7 +255,7 @@ func (m *Module) pageKeyboard(loc *i18n.Localizer, s *session, tok string, page 
 	if len(row) > 0 {
 		rows = append(rows, row)
 	}
-	if withMore && page < pageCount(len(s.memes), per) {
+	if withMore && (page < pageCount(len(all), per) || next > 0) {
 		rows = append(rows, []models.InlineKeyboardButton{{Text: loc.T("search.more", nil), CallbackData: moreData(tok, page+1)}})
 	}
 	if page == 1 && s.scope.filtered() {
@@ -268,7 +274,7 @@ func (m *Module) handleSimilar(ctx context.Context, b *bot.Bot, cq *models.Callb
 		s = m.pages.get(tok, m.now())
 	}
 	switch {
-	case s == nil || idx >= len(s.memes):
+	case s == nil || idx >= len(snapshotMemes(s)):
 		m.log.DebugContext(ctx, "search: similar on expired session", "user_id", cq.From.ID, "data", cq.Data)
 		m.answerCallback(ctx, b, cq.ID, loc.T("search.expired", nil))
 		return
@@ -277,7 +283,7 @@ func (m *Module) handleSimilar(ctx context.Context, b *bot.Bot, cq *models.Callb
 		m.answerCallback(ctx, b, cq.ID, loc.T("search.not_owner", nil))
 		return
 	}
-	src := s.memes[idx]
+	src := snapshotMemes(s)[idx]
 	q := truncateRunes(strings.TrimSpace(src.Description), memesearch.MaxQueryLen)
 	if q == "" {
 		m.log.DebugContext(ctx, "search: similar without description", "user_id", cq.From.ID, "meme_id", src.ID)
@@ -289,7 +295,7 @@ func (m *Module) handleSimilar(ctx context.Context, b *bot.Bot, cq *models.Callb
 	sc.mode = memesearch.ModeVector
 	if found, done := m.similarByID(ctx, b, loc, cq.From.ID, s.chat, src, sc); done {
 		if found != nil {
-			m.showResults(ctx, b, loc, cq.From.ID, s.chat, q, sc, found, src.ID)
+			m.showResults(ctx, b, loc, cq.From.ID, s.chat, q, sc, found, 0, src.ID)
 		}
 		return
 	}
@@ -390,7 +396,7 @@ func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Updat
 		return
 	}
 	s := m.pages.get(tok, m.now())
-	if s == nil || pageSlice(s.memes, page, m.cfg.ResultsPerPage) == nil {
+	if s == nil {
 		m.log.DebugContext(ctx, "search: session expired", "user_id", cq.From.ID, "page", page)
 		m.answerCallback(ctx, b, cq.ID, loc.T("search.expired", nil))
 		return
@@ -398,6 +404,10 @@ func (m *Module) handleCallback(ctx context.Context, b *bot.Bot, u *models.Updat
 	if s.owner != cq.From.ID {
 		m.log.DebugContext(ctx, "search: foreign paging refused", "user_id", cq.From.ID, "owner", s.owner)
 		m.answerCallback(ctx, b, cq.ID, loc.T("search.not_owner", nil))
+		return
+	}
+	if popup := m.ensurePage(ctx, loc, s, page); popup != "" {
+		m.answerCallback(ctx, b, cq.ID, popup)
 		return
 	}
 	m.answerCallback(ctx, b, cq.ID, "")
@@ -446,7 +456,7 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 		}
 		sc := m.inlineScope(m.loadPrefs(ctx, user), o, m.inlineGroup(ctx, user, o.group), iq.ChatType)
 		m.log.DebugContext(ctx, "search: inline scope", "user_id", user, "tags", sc.tags, "folders", sc.folders)
-		found, err := m.find(ctx, user, q, &sc, m.cfg.InlineResults)
+		found, _, err := m.find(ctx, user, q, &sc, m.cfg.InlineResults, 0)
 		switch {
 		case invalidFolder(err):
 			m.log.DebugContext(ctx, "search: inline folder rejected by the server", "user_id", user, "folders", sc.folders)
@@ -501,4 +511,52 @@ func (m *Module) answerCallback(ctx context.Context, b *bot.Bot, id, text string
 	if _, err := b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: id, Text: text}); err != nil {
 		m.log.WarnContext(ctx, "search: answer callback failed", "err", err)
 	}
+}
+
+// ensurePage makes page available, fetching the next server page when the
+// fetched memes ran out and the server said there are more. It returns the
+// popup text when the page cannot be shown. Paging stays free even when it
+// calls the API: it continues a search that was already charged.
+func (m *Module) ensurePage(ctx context.Context, loc *i18n.Localizer, s *session, page int) string {
+	per := m.cfg.ResultsPerPage
+	// Held across the request so two quick presses do not fetch the same offset twice.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if pageSlice(s.memes, page, per) != nil {
+		return ""
+	}
+	if s.nextOffset == 0 || page != pageCount(len(s.memes), per)+1 {
+		m.log.DebugContext(ctx, "search: page not available", "user_id", s.owner, "page", page)
+		return loc.T("search.expired", nil)
+	}
+	sc := s.scope
+	found, next, err := m.find(ctx, s.owner, s.query, &sc, memesearch.MaxLimit, s.nextOffset)
+	switch {
+	case errors.Is(err, memesearch.ErrUnsupported):
+		s.nextOffset = 0
+		return loc.T("search.no_more", nil)
+	case err != nil:
+		return m.searchError(ctx, loc, s.owner, err, sc.folders)
+	}
+	seen := make(map[int64]bool, len(s.memes))
+	for _, mm := range s.memes {
+		seen[mm.ID] = true
+	}
+	added := 0
+	for _, mm := range found {
+		// The library may change between requests and shift results across pages.
+		if seen[mm.ID] || mm.ID == s.exclude {
+			continue
+		}
+		seen[mm.ID] = true
+		s.memes = append(s.memes, mm)
+		added++
+	}
+	m.log.DebugContext(ctx, "search: fetched more results", "user_id", s.owner, "offset", s.nextOffset,
+		"count", len(found), "added", added, "next_offset", next)
+	s.nextOffset = next
+	if pageSlice(s.memes, page, per) == nil {
+		return loc.T("search.no_more", nil)
+	}
+	return ""
 }

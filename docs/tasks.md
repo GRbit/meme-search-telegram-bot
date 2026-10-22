@@ -101,6 +101,8 @@ Replace 1.6's description query with `GET /api/v1/memes/:id/similar` (exact, no 
 
 ### 2.5 More than 20 results (needs H2)
 
+Done. Fetches stay free, as paging always was: they continue a charged search.
+
 "More" fetches the next page with `offset` when the 20 cached ids run out.
 
 ### 2.6 Save through the API (needs F2, maintainer decision pending)

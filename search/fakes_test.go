@@ -489,6 +489,9 @@ type fakeServer struct {
 	similar      []memesearch.Meme
 	similarErr   error
 	similarCalls [][2]int64
+	// paging serves results[offset:offset+limit] with meta next_offset, like a
+	// server with offset; without it every page is the first, like an old one.
+	paging bool
 }
 
 func newServer(api *fakeAPI, folders ...string) *fakeServer {
@@ -506,6 +509,22 @@ func (s *fakeServer) Capabilities() memesearch.Capabilities {
 }
 
 func (s *fakeServer) SearchPage(ctx context.Context, q string, o memesearch.SearchOptions) (memesearch.Page, error) {
+	if s.paging {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.searches = append(s.searches, q)
+		s.opts = append(s.opts, o)
+		if s.err != nil {
+			return memesearch.Page{}, s.err
+		}
+		start := min(o.Offset, len(s.results))
+		end := min(start+o.Limit, len(s.results))
+		page := memesearch.Page{Memes: s.results[start:end], Ignored: s.ignore}
+		if end < len(s.results) && end <= memesearch.MaxOffset {
+			page.NextOffset = end
+		}
+		return page, nil
+	}
 	found, err := s.Search(ctx, q, o)
 	if err != nil {
 		return memesearch.Page{}, err

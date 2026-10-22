@@ -22,17 +22,34 @@ const (
 	maxSessions = 5000
 )
 
-// session is one search whose results can be paged without calling the API again.
+// session is one search whose results can be paged without calling the API
+// again, until the fetched memes run out and the server offers more.
 type session struct {
 	token   string
 	owner   int64
 	chat    int64
-	memes   []memesearch.Meme
 	created time.Time
 	// query and scope are kept for what reruns the search: "Search
-	// everywhere" and "Similar".
+	// everywhere", "Similar" and fetching more.
 	query string
 	scope scope
+	// exclude is a meme id never shown (the source of "Similar"), or 0.
+	exclude int64
+
+	// mu guards memes and nextOffset: "More" appends while other presses read.
+	mu    sync.Mutex
+	memes []memesearch.Meme
+	// nextOffset is the server's meta.next_offset; 0 means no more to fetch
+	// (last page, offset 200, an older server, or similar by id).
+	nextOffset int
+}
+
+// snapshot returns the memes and next offset. Appends never change elements
+// already in the slice, so the returned slice stays valid without the lock.
+func (s *session) snapshot() ([]memesearch.Meme, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memes, s.nextOffset
 }
 
 // pageStore keeps sessions in memory; a restart loses them and the user gets
@@ -168,4 +185,9 @@ func pageSlice(ms []memesearch.Meme, page, per int) []memesearch.Meme {
 func searchQuery(text string) (string, bool) {
 	q := strings.TrimSpace(text)
 	return q, q != "" && utf8.RuneCountInString(q) <= memesearch.MaxQueryLen
+}
+
+func snapshotMemes(s *session) []memesearch.Meme {
+	ms, _ := s.snapshot()
+	return ms
 }
