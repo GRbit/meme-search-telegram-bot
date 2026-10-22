@@ -160,10 +160,13 @@ func (m *Module) process(ctx context.Context, b *bot.Bot, msg *models.Message, r
 	if msg.Date != 0 {
 		date = time.Unix(int64(msg.Date), 0)
 	}
-	folder := m.saveFolder(msg.From)
-	log.Debug("saver: save folder", "mode", string(m.cfg.Mode), "folder", folder)
 	base := fileBase(date.In(m.cfg.Location), sourceName(msg), msg.ID, sum)
 	ext := pickExt(filePath, ref.MIME)
+	if out, name, done := m.uploadAPI(ctx, msg.From, base+"."+ext, data, log); done {
+		return out, name
+	}
+	folder := m.saveFolder(msg.From)
+	log.Debug("saver: save folder", "mode", string(m.cfg.Mode), "folder", folder)
 
 	m.mu.Lock()
 	var target string

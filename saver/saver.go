@@ -52,7 +52,23 @@ type Config struct {
 	// NoNotify turns off the "searchable now" reply; it is negative so the
 	// zero value keeps the notice on.
 	NoNotify bool
+	Backend  Backend // "" means BackendFolder
 }
+
+// Backend chooses how a saved meme reaches meme-search.
+type Backend string
+
+// Save backends.
+//
+// BackendAPI posts to meme-search's upload API (POST /api/v2/memes) into the
+// save folder, so saving needs no shared volume and the meme is described
+// without waiting for a rescan. The folder writer stays the fallback: on a
+// server without the API, without an upload token, or when the save folder
+// is not registered in meme-search (the API cannot create folders).
+const (
+	BackendFolder Backend = "folder"
+	BackendAPI    Backend = "api"
+)
 
 // Mode chooses the save folder layout.
 type Mode string
@@ -100,6 +116,12 @@ func (c Config) Validate() error {
 		errs = append(errs, &configerr.Field{Name: "Mode",
 			Reason: fmt.Sprintf("must be %q, %q or %q, got %q", ModePerUser, ModeSingle, ModeNested, c.Mode)})
 	}
+	switch c.Backend {
+	case "", BackendFolder, BackendAPI:
+	default:
+		errs = append(errs, &configerr.Field{Name: "Backend",
+			Reason: fmt.Sprintf("must be %q or %q, got %q", BackendFolder, BackendAPI, c.Backend)})
+	}
 	if c.Folder != "" && !validFolder(c.Folder) {
 		errs = append(errs, &configerr.Field{Name: "Folder",
 			Reason: fmt.Sprintf("must be one folder name of letters, digits, - and _, got %q", c.Folder)})
@@ -133,6 +155,14 @@ type Deps struct {
 	// where description_status arrives; feed pages come in via MemesChanged.
 	DB   *sql.DB
 	Caps memesearch.CapabilitySource
+	// Uploader is required with BackendAPI (with Caps, which says whether the
+	// server takes uploads); *memesearch.HTTPClient implements it.
+	Uploader Uploader
+}
+
+// Uploader is the slice of the meme-search API the API backend needs.
+type Uploader interface {
+	Upload(ctx context.Context, files []memesearch.UploadFile, opts memesearch.UploadOptions) (memesearch.UploadResult, error)
 }
 
 // Module implements module.Module.
@@ -170,6 +200,12 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	if deps.I18n == nil {
 		return nil, errors.New("saver: Deps.I18n is required")
 	}
+	if cfg.Backend == "" {
+		cfg.Backend = BackendFolder
+	}
+	if cfg.Backend == BackendAPI && (deps.Uploader == nil || deps.Caps == nil) {
+		return nil, errors.New("saver: the API backend needs Deps.Uploader and Deps.Caps")
+	}
 	if cfg.AlbumDebounce == 0 {
 		cfg.AlbumDebounce = 2 * time.Second
 	}
@@ -203,9 +239,11 @@ func New(cfg Config, deps Deps) (*Module, error) {
 	m := &Module{cfg: cfg, deps: deps, log: deps.Log, httpc: httpc, downloadTimeout: defaultDownloadTimeout, hashes: folderHashes{}}
 	m.albums = newAlbums(cfg.AlbumDebounce, m.flushAlbum)
 	if cfg.Mode == ModeSingle || cfg.Mode == ModeNested {
-		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "dir", cfg.Dir, "folder", cfg.Folder)
+		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "backend", string(cfg.Backend), "dir", cfg.Dir,
+			"folder", cfg.Folder)
 	} else {
-		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "dir", cfg.Dir, "dir_prefix", cfg.DirPrefix)
+		deps.Log.Info("saver: enabled", "mode", string(cfg.Mode), "backend", string(cfg.Backend), "dir", cfg.Dir,
+			"dir_prefix", cfg.DirPrefix)
 	}
 	return m, nil
 }

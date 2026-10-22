@@ -98,7 +98,12 @@ Replace 1.6's description query with `GET /api/v1/memes/:id/similar` (exact, no 
 
 "More" fetches the next page with `offset` when the 20 cached ids run out.
 
-### 2.6 Save through the API (needs F2, maintainer decision pending)
+### 2.6 Save through the API (needs F2, maintainer decision pending) - done
+
+Done as `SAVE_BACKEND=api` (default `folder`). Upload goes to the save folder of `SAVE_MODE` with
+`generate_description=true`. Deviation: the API only fills registered folders, so `invalid_folder` (and a server
+without the API or token) falls back to the folder writer; transient upload errors do not (the user is told to
+retry), since a file written without a shared volume would never be found. One request per album item.
 
 New saver backend: `POST /api/v2/memes` with a `media:write` token into a chosen folder, so saving works without
 a shared volume and the meme is searchable without waiting for a rescan. Keep the folder writer for setups

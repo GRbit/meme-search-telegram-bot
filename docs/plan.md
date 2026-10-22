@@ -311,3 +311,9 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   mounted at another level) falls back to the base-name lookup. For the feed's rescan trigger a name found in
   another folder counts as indexed only when the index has no file in the meme's folder at all (layouts differ);
   otherwise every poll in such a setup would rescan.
+- Save through the API (tasks 2.6): `SAVE_BACKEND=api` uploads each saved file (API token with `media:write`) into
+  `FolderFor`'s folder, `generate_description=true`, while the probe reports the upload capability. Created ->
+  "Saved" (and the searchable notice tracks the stored name), duplicate in folder -> "Already saved", per-file
+  error or a failed request -> "Could not save". `ErrUnsupported` and `422 invalid_folder` fall back to the folder
+  writer, which creates the folder for the owner (or upstream L) to register. No local file means no
+  `AddLibraryFile`; the feed warms the meme up.

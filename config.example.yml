@@ -34,6 +34,7 @@ saver:
   dir_prefix: tg-          # SAVE_DIR_PREFIX, per_user mode only
   note: ""                 # SAVE_NOTE, appended to the "Saved" reply
   notify: true             # SAVE_NOTIFY, reply when a saved meme becomes searchable
+  backend: folder          # SAVE_BACKEND: folder (write files) or api (upload API, files as fallback)
 
 access:
   save_user_ids: []        # SAVE_USER_IDS, e.g. [111111, 222222]; also trusted

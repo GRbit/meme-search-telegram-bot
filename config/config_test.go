@@ -76,6 +76,7 @@ func TestDefaults(t *testing.T) {
 	want.Saver.Dir = filepath.Join(exe, "memes")
 	want.Saver.DirPrefix = "tg-"
 	want.Saver.Mode = saver.ModePerUser
+	want.Saver.Backend = saver.BackendFolder
 	want.Saver.Folder = "telegram"
 	want.Saver.Location = time.UTC
 
@@ -108,6 +109,7 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		"SAVE_FOLDER=all_memes",
 		"SAVE_NOTE=see you",
 		"SAVE_NOTIFY=false",
+		"SAVE_BACKEND=api",
 		"SAVE_USER_IDS=1, 2,3",
 		"TRUSTED_USER_IDS= 4 ,5 ",
 		"PUBLIC_DAILY_PER_USER=0",
@@ -149,6 +151,7 @@ func TestEveryEnvVarParsed(t *testing.T) {
 		{"Saver.Folder", c.Saver.Folder, "all_memes"},
 		{"Saver.Note", c.Saver.Note, "see you"},
 		{"Saver.NoNotify", c.Saver.NoNotify, true},
+		{"Saver.Backend", c.Saver.Backend, saver.BackendAPI},
 		{"Access.SaveUserIDs", c.Access.SaveUserIDs, []int64{1, 2, 3}},
 		{"Access.TrustedUserIDs", c.Access.TrustedUserIDs, []int64{4, 5}},
 		{"Access.PublicDailyPerUser", c.Access.PublicDailyPerUser, 0},
@@ -319,6 +322,7 @@ func TestValidation(t *testing.T) {
 		{"warmup interval negative", env("WARMUP_INTERVAL=-1s"), "WARMUP_INTERVAL"},
 		{"feed interval negative", env("FEED_INTERVAL=-1s"), "FEED_INTERVAL"},
 		{"save notify not a bool", env("SAVE_NOTIFY=maybe"), "SAVE_NOTIFY"},
+		{"save backend unknown", env("SAVE_BACKEND=s3"), "SAVE_BACKEND"},
 		{"uploads negative", env("CACHE_UPLOADS_PER_MIN=-1"), "CACHE_UPLOADS_PER_MIN"},
 		{"warmup uploads negative", env("WARMUP_UPLOADS_PER_MIN=-1"), "WARMUP_UPLOADS_PER_MIN"},
 		{"warmup above total", env("CACHE_UPLOADS_PER_MIN=5", "WARMUP_UPLOADS_PER_MIN=6"), "WARMUP_UPLOADS_PER_MIN"},

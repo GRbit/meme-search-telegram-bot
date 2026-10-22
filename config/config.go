@@ -136,6 +136,9 @@ var settings = []setting{
 	{env: "SAVE_NOTE", key: "saver.note",
 		set: func(c *Config, v string) error { c.Saver.Note = v; return nil },
 		get: func(c *Config) string { return c.Saver.Note }},
+	{env: "SAVE_BACKEND", key: "saver.backend", field: "Saver.Backend", def: string(saver.BackendFolder),
+		set: func(c *Config, v string) error { c.Saver.Backend = saver.Backend(v); return nil },
+		get: func(c *Config) string { return string(c.Saver.Backend) }},
 	{env: "SAVE_NOTIFY", key: "saver.notify", field: "Saver.NoNotify", def: "true",
 		set: func(c *Config, v string) error {
 			on, err := strconv.ParseBool(v)

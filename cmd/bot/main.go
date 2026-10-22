@@ -95,7 +95,7 @@ func run(ctx context.Context, environ []string, baseDir string, botOpts ...bot.O
 	modules := []module.Module{srch}
 	if cfg.SaverEnabled {
 		sv, err := saver.New(cfg.Saver, saver.Deps{Permit: acc, Known: media, I18n: bundle, DB: db, Caps: api,
-			Log: log.With("module", "saver")})
+			Uploader: api, Log: log.With("module", "saver")})
 		if err != nil {
 			return err
 		}
