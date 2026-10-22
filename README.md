@@ -388,6 +388,9 @@ they do not cost extra. Counters are stored in SQLite and reset at midnight in
   whether inline mode is on. Right after the first start the cache is empty: results appear as uploads finish.
 - **"Search failed":** run with `LOG_LEVEL=debug`; a `401`/`403` from meme-search means a wrong token or a
   missing scope.
+- **"memesearch capabilities could not be checked yet" at startup:** meme-search was still booting. The bot
+  retries after 1m, 2m, 4m and so on; in your own compose file use `depends_on: meme_search: condition:
+  service_healthy` with a healthcheck on meme-search's `GET /up`, as `docker-compose.meme-search.yml` does.
 - **Saved memes do not show up:** register the save folder (`tg-<username>`, or `SAVE_FOLDER` in single mode, or `SAVE_FOLDER` with "include
   subfolders" in nested mode)
   in meme-search Settings -> Image paths and wait for descriptions to be generated.
