@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/grbit/meme-search-telegram-bot/memesearch"
@@ -104,6 +106,26 @@ func (c *Cache) libraryByName(ctx context.Context, base string) ([]libRow, error
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// libraryFor returns the library rows m may be. A server that reports the
+// meme's folder names one exact path, since LibraryDir is meme-search's memes
+// root; when no file is there (LibraryDir mounted at another level, or an
+// older server without the field) every file with m's base name is a candidate.
+func (c *Cache) libraryFor(ctx context.Context, m memesearch.Meme) ([]libRow, error) {
+	if m.Folder != "" && m.Filename != "" {
+		rel := path.Join(m.Folder, m.Filename)
+		r, ok, err := c.libraryRow(ctx, rel)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			c.log.DebugContext(ctx, "library match by folder", "meme_id", m.ID, "rel_path", rel)
+			return []libRow{r}, nil
+		}
+		c.log.DebugContext(ctx, "library: no file at the meme's folder, matching by name", "meme_id", m.ID, "rel_path", rel)
+	}
+	return c.libraryByName(ctx, m.Filename)
 }
 
 // fileMeta is what a rescan compares to decide whether to hash a file again.
@@ -372,4 +394,19 @@ func (c *Cache) pendingAPIWarmup(ctx context.Context) ([]memesearch.Meme, error)
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// libraryHasFolder reports whether any indexed file sits directly in folder
+// (relative, forward slashes).
+func (c *Cache) libraryHasFolder(ctx context.Context, folder string) (bool, error) {
+	prefix := strings.TrimSuffix(folder, "/") + "/"
+	var n int
+	// substr instead of LIKE: folder names may contain % and _.
+	err := c.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM mediacache_library
+		WHERE substr(rel_path, 1, length(?1)) = ?1 AND instr(substr(rel_path, length(?1) + 1), '/') = 0)`,
+		prefix).Scan(&n)
+	if err != nil {
+		return false, fmt.Errorf("mediacache: library folder lookup: %w", err)
+	}
+	return n == 1, nil
 }

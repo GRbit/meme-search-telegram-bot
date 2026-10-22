@@ -186,7 +186,7 @@ func (c *Cache) resolveMeme(ctx context.Context, m memesearch.Meme) (string, err
 		c.log.DebugContext(ctx, "resolve: meme rejected recently, not retrying", "meme_id", m.ID, "failed_at", mr.failedAt)
 		return "", fmt.Errorf("%w: meme %d", ErrRejected, m.ID)
 	}
-	rows, err := c.libraryByName(ctx, m.Filename)
+	rows, err := c.libraryFor(ctx, m)
 	if err != nil {
 		return "", err
 	}
@@ -366,7 +366,7 @@ func (c *Cache) jobData(ctx context.Context, j *job) (data []byte, ok bool) {
 		return nil, false
 	}
 	j.data = ct.Data
-	rows, err := c.libraryByName(ctx, j.meme.Filename)
+	rows, err := c.libraryFor(ctx, j.meme)
 	if err != nil {
 		c.log.WarnContext(ctx, "upload: library lookup", "meme_id", j.memeID, "err", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 	"strconv"
 	"time"
 
@@ -140,12 +141,12 @@ func (c *Cache) rescanForUnknown(ctx context.Context, memes []memesearch.Meme) {
 		if notPhoto(m) != nil || !indexable(m.Filename) {
 			continue
 		}
-		rows, err := c.libraryByName(ctx, m.Filename)
+		known, err := c.indexed(ctx, m)
 		if err != nil {
 			c.log.WarnContext(ctx, "feed: library lookup", "meme_id", m.ID, "err", err)
 			continue
 		}
-		if len(rows) == 0 {
+		if !known {
 			unknown++
 		}
 	}
@@ -208,3 +209,20 @@ func apiWarmupJob(m memesearch.Meme) *job {
 }
 
 func apiJobKey(id int64) string { return "api:" + strconv.FormatInt(id, 10) }
+
+// indexed reports whether m's file is in the library index. A name found in
+// another folder does not count when the index has m's folder at all: then
+// the folder layout matches and m's own file is simply not scanned yet. Without
+// that folder the layouts differ (LibraryDir at another level) and only the
+// name can be trusted, or every poll would ask for a rescan.
+func (c *Cache) indexed(ctx context.Context, m memesearch.Meme) (bool, error) {
+	rows, err := c.libraryFor(ctx, m)
+	if err != nil || len(rows) == 0 || m.Folder == "" {
+		return len(rows) > 0, err
+	}
+	if rows[0].relPath == path.Join(m.Folder, m.Filename) {
+		return true, nil
+	}
+	has, err := c.libraryHasFolder(ctx, m.Folder)
+	return !has, err
+}

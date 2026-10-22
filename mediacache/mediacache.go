@@ -325,7 +325,7 @@ func (c *Cache) Lookup(ctx context.Context, m memesearch.Meme) (fileID string, o
 		c.log.DebugContext(ctx, "cache hit by meme id", "meme_id", m.ID)
 		return mr.fileID, true
 	}
-	rows, err := c.libraryByName(ctx, m.Filename)
+	rows, err := c.libraryFor(ctx, m)
 	if err != nil {
 		c.lookupErr(ctx, m, err)
 		return "", false

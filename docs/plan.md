@@ -305,3 +305,9 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   listing) keyed by the message it replied to, and `MemesChanged` (fed by `mediacache.Cache.OnFeed`) marks rows
   ready or failed by base name. One reply per message or album once nothing in it is pending; rows older than 7
   days are dropped silently (e.g. a folder not registered in meme-search).
+- Folder matching (tasks 2.1, mediacache side): a meme with `folder` is looked up at `<folder>/<filename>` in the
+  library index first, since `LIBRARY_DIR` is meme-search's memes root; a hit settles name collisions without
+  downloading the content to compare hashes. No row there (an older server without the field, or `LIBRARY_DIR`
+  mounted at another level) falls back to the base-name lookup. For the feed's rescan trigger a name found in
+  another folder counts as indexed only when the index has no file in the meme's folder at all (layouts differ);
+  otherwise every poll in such a setup would rescan.

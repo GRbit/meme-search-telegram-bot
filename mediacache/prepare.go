@@ -40,7 +40,7 @@ func (c *Cache) Prepare(ctx context.Context, m memesearch.Meme) (Photo, error) {
 	if id, ok := c.Lookup(ctx, m); ok {
 		return Photo{FileID: id, Name: photoName(m)}, nil
 	}
-	rows, err := c.libraryByName(ctx, m.Filename)
+	rows, err := c.libraryFor(ctx, m)
 	if err != nil {
 		c.log.WarnContext(ctx, "prepare: library lookup failed, using the API", "meme_id", m.ID, "err", err)
 	}

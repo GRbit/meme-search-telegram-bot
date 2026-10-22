@@ -67,11 +67,15 @@ func (ls *listServer) serve(w http.ResponseWriter, r *http.Request) {
 	start = min(start, end)
 	data := []map[string]any{}
 	for _, m := range ls.memes[start:end] {
-		data = append(data, map[string]any{
+		d := map[string]any{
 			"id": m.ID, "filename": m.Filename, "description": nil, "tags": []string{},
 			"media_type": m.MediaType, "content_url": "/api/v1/memes/" + strconv.FormatInt(m.ID, 10) + "/content",
 			"description_status": "pending",
-		})
+		}
+		if m.Folder != "" { // older servers omit the field
+			d["folder"] = m.Folder
+		}
+		data = append(data, d)
 	}
 	meta := map[string]any{"limit": limit, "count": len(data), "has_more": end < len(ls.memes)}
 	if len(data) > 0 {
