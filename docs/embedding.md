@@ -25,7 +25,8 @@ sv, _ := saver.New(saver.Config{Dir: "/memes"}, saver.Deps{Permit: acc, Known: m
 media.OnFeed(sv.MemesChanged)
 srch, _ := search.New(search.Config{}, search.Deps{API: api, Media: media, I18n: bundle, DB: db, Log: log,
 	Middlewares: []bot.Middleware{acc.Middleware(search.Chargeable)},
-	OwnFolder:   sv.FolderFor}) // optional: the "Only mine" folder shortcut
+	OwnFolder:   sv.FolderFor, // optional: the "Only mine" folder shortcut
+	Trusted:     func(id int64) bool { return acc.Tier(id) != access.TierPublic }}) // optional: paging past 20
 
 for _, m := range []module.Module{srch, sv} {
 	m.Register(b)

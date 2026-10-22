@@ -167,6 +167,10 @@ func (m *Module) showResults(ctx context.Context, b *bot.Bot, loc *i18n.Localize
 		found = slices.DeleteFunc(found, func(mm memesearch.Meme) bool { return mm.ID == exclude })
 	}
 	m.log.DebugContext(ctx, "search: results", "user_id", user, "count", len(found), "folders_applied", sc.foldersApplied)
+	if next > 0 && m.deps.Trusted != nil && !m.deps.Trusted(user) {
+		m.log.DebugContext(ctx, "search: paging past the first results is for trusted users", "user_id", user)
+		next = 0
+	}
 	s := &session{owner: user, chat: chat, memes: found, nextOffset: next, created: m.now(), query: q, scope: sc, exclude: exclude}
 	if len(found) == 0 {
 		if !sc.filtered() {

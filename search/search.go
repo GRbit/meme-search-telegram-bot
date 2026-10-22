@@ -142,9 +142,15 @@ type Deps struct {
 	// OwnFolder returns the library folder the user's saved memes go to, or ""
 	// when the user cannot save. Optional: nil hides the "Only mine" shortcut.
 	OwnFolder func(u *models.User) string
-	Media     MediaCache
-	I18n      *i18n.Bundle
-	Log       *slog.Logger
+	// Trusted reports whether a user may page past the first memesearch.MaxLimit
+	// results (offset fetches). Optional: nil means everybody may.
+	//
+	// Every fetch is an API request on the shared per-token limit, and paging is
+	// not charged, so a host with a free tier keeps it to one request per search.
+	Trusted func(userID int64) bool
+	Media   MediaCache
+	I18n    *i18n.Bundle
+	Log     *slog.Logger
 	// Middlewares wrap every handler that may run a search (access limits).
 	Middlewares []bot.Middleware
 	Now         func() time.Time // nil means time.Now

@@ -207,7 +207,8 @@ Then open the bot in Telegram and send `/start`.
 ## Usage
 
 - Send any text in the private chat to search; "More" pages through up to 20 results. Newer meme-search versions
-  page further (up to 220): past the first 20 the bot fetches the next 20, and "Page 4 of 4+" says more exist.
+  page further (up to 220) for trusted users and savers: past the first 20 the bot fetches the next 20, and
+  "Page 4 of 4+" says more exist. Public users stop at 20.
 - `/settings` sets your own search mode and tags, kept until you change them:
   - **Smart** (vector search, the default) finds memes by meaning, also across languages.
   - **Words** (keyword search) finds memes containing any word of the query; memes matching more words come

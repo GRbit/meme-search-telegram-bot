@@ -102,6 +102,7 @@ func run(ctx context.Context, environ []string, baseDir string, botOpts ...bot.O
 		API: api, Media: media, I18n: bundle, DB: db, Log: log.With("module", "search"),
 		Middlewares: []bot.Middleware{acc.Middleware(search.Chargeable)},
 		OwnFolder:   ownFolder,
+		Trusted:     func(id int64) bool { return acc.Tier(id) != access.TierPublic },
 	})
 	if err != nil {
 		return err

@@ -106,7 +106,8 @@ Replace 1.6's description query with `GET /api/v1/memes/:id/similar` (exact, no 
 
 ### 2.5 More than 20 results (needs H2)
 
-Done. Fetches stay free, as paging always was: they continue a charged search.
+Done. Fetches stay free, as paging always was: they continue a charged search. Only trusted users and savers
+page past 20 (`search.Deps.Trusted`): each fetch is an API request on the shared token limit.
 
 "More" fetches the next page with `offset` when the 20 cached ids run out.
 

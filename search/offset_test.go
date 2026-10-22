@@ -159,3 +159,23 @@ func TestMoreFetchRespectsMemeBudget(t *testing.T) {
 		t.Fatalf("first session popup = %q, want expired", txt)
 	}
 }
+
+// Public users get the first 20 results only, as on an older server: offset
+// fetches are API requests a free tier should not be able to multiply.
+func TestMoreFetchOnlyForTrusted(t *testing.T) {
+	for _, trusted := range []bool{false, true} {
+		srv := pagingServer(30)
+		e := newEnv(t, srv.fakeAPI, &fakeMedia{uploads: true}, withServer(srv), func(_ *Config, d *Deps) {
+			d.Trusted = func(user int64) bool { return trusted && user == userID }
+		})
+		e.process(textUpdate("cat"))
+		want := map[bool]string{false: "Page 1 of 4", true: "Page 1 of 4+"}[trusted]
+		if txt := e.lastSent(t, "sendMessage").fields["text"]; txt != want {
+			t.Fatalf("trusted=%v control = %q", trusted, txt)
+		}
+		pageTo(t, e, 4)
+		if more := e.moreData(t) != ""; more != trusted || srv.searchCount() != 1 {
+			t.Fatalf("trusted=%v more=%v searches=%d", trusted, more, srv.searchCount())
+		}
+	}
+}
