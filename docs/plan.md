@@ -360,3 +360,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   note and change nothing. Their private and inline searches use the config defaults; the saved row is not
   deleted, so it applies again if the user becomes trusted. Per-query `#tag`/`dir:` filters are unchanged.
   `/settings` stays in the command menu, which cannot differ per user. A nil `Trusted` keeps settings open to all.
+- Public users' typed filters in group inline (owner decision): with `search.Deps.Trusted` set, a public user's
+  `#tag`, `dir:` and `dir:*` words in an inline query from a group or supergroup are dropped (debug log with
+  counts), so the group code and `INLINE_GROUP_SCOPE` decide. Over-limit filters are still refused before that,
+  because `Chargeable` cannot see tiers and must agree with the handler. Private chats and inline elsewhere are
+  unchanged for now.

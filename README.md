@@ -298,6 +298,11 @@ folders and the bot says so under the results.
 In an inline query the tags and folders of a group's button (`g:<code>`, below) come between the query's own
 filters and `/settings`; `INLINE_GROUP_SCOPE` comes last.
 
+Public users (neither trusted nor savers) cannot filter inline queries typed in a group: there the `#tag`,
+`dir:` and `dir:*` words they type are dropped from the query and ignored, so the group's button (`g:<code>`) and
+`INLINE_GROUP_SCOPE` decide. `#dog funny` searches `funny` within the group's scope; `#dog` alone is not a search
+and costs nothing. In private chats, and inline outside groups, their filters work as for everyone.
+
 **In a group scope** (`/memescope set ...` and `INLINE_GROUP_SCOPE`) only filters are allowed, there is no query,
 and the tags of a group always match any-of:
 

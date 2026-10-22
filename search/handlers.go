@@ -448,6 +448,7 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 	results := []models.InlineQueryResult{}
 	var misses []memesearch.Meme
 	if ok {
+		o = m.dropPublicGroupFilters(ctx, user, iq.ChatType, o)
 		// Unknown typed folders are passed on: the server's 422 gives an empty grid, which is all
 		// inline can say anyway.
 		if folders, unknown := m.resolveFolders(ctx, o.folders); len(unknown) == 0 {
@@ -559,4 +560,22 @@ func (m *Module) ensurePage(ctx context.Context, loc *i18n.Localizer, s *session
 		return loc.T("search.no_more", nil)
 	}
 	return ""
+}
+
+// dropPublicGroupFilters removes the #tag, dir: and dir:* words a public user
+// typed into an inline query in a group: there the group's code and
+// INLINE_GROUP_SCOPE decide what is shown. The words are already out of the
+// query text, and the over-limit refusal still counts them, so Chargeable
+// (which cannot see tiers) and the handler keep agreeing.
+func (m *Module) dropPublicGroupFilters(ctx context.Context, user int64, chatType string, o overrides) overrides {
+	if m.deps.Trusted == nil || m.deps.Trusted(user) || !isGroupChatType(chatType) {
+		return o
+	}
+	if len(o.tags) == 0 && len(o.folders) == 0 && !o.allFolders {
+		return o
+	}
+	m.log.DebugContext(ctx, "search: typed filters ignored for a public user in a group", "user_id", user,
+		"ignored_tags", len(o.tags), "ignored_folders", len(o.folders), "ignored_all_folders", o.allFolders)
+	o.tags, o.folders, o.allFolders = nil, nil, false
+	return o
 }
