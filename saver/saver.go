@@ -49,6 +49,9 @@ type Config struct {
 	// letters, digits, "-" and "_" only, so it is a single path element
 	// meme-search can register by name. "" means "telegram".
 	Folder string
+	// NoNotify turns off the "searchable now" reply; it is negative so the
+	// zero value keeps the notice on.
+	NoNotify bool
 }
 
 // Mode chooses the save folder layout.

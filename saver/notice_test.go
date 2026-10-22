@@ -121,3 +121,20 @@ func TestSearchableNoticeExpires(t *testing.T) {
 	e.changed(described(savedName(5, "meme"), memesearch.StatusReady))
 	e.api.noMoreReplies(t)
 }
+
+func TestSearchableNoticeCanBeTurnedOff(t *testing.T) {
+	db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "bot.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	e := newEnvWith(t, func(c *Config) { c.NoNotify = true }, func(d *Deps) {
+		d.DB = db
+		d.Caps = memesearch.StaticCapabilities{Listing: true}
+	})
+	e.api.files["p"] = []byte("meme")
+	e.send(photoMsg(5, "p"))
+	e.api.reply(t)
+	e.changed(described(savedName(5, "meme"), memesearch.StatusReady))
+	e.api.noMoreReplies(t)
+}

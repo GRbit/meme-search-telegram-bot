@@ -80,7 +80,9 @@ re-enables charging `srch:s:`. Switches to `GET /api/v1/memes/:id/similar` when 
 ### 2.3 Listing and change feed (needs G) - done
 
 Done; see `docs/plan.md` implementation notes. Deviation: the notice matches saved files by base name (they end
-in a content hash) instead of storing meme ids, which the folder writer never learns.
+in a content hash) instead of storing meme ids, which the folder writer never learns. `SAVE_NOTIFY=false` turns
+the notice off. Not done: the occasional full relisting the API docs suggest against changes missed during a
+poll; a new meme changes again when its description arrives, so a miss heals itself.
 
 - Warmup without filesystem access: enumerate memes via the cursor listing instead of scanning `LIBRARY_DIR`
   (the library lives on another server today). Keep the folder scan for setups that have it.

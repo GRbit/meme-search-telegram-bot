@@ -42,7 +42,7 @@ const (
 // notice: it needs the database and a server whose change feed exists, as
 // the feed is the only place description_status arrives.
 func (m *Module) noticesOn() bool {
-	return m.deps.DB != nil && m.deps.Caps != nil && m.deps.Caps.Capabilities().Listing
+	return !m.cfg.NoNotify && m.deps.DB != nil && m.deps.Caps != nil && m.deps.Caps.Capabilities().Listing
 }
 
 // trackSaved remembers a written file until the feed says it is described.

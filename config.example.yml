@@ -33,6 +33,7 @@ saver:
   folder: telegram         # SAVE_FOLDER, the folder of single mode, the parent of nested mode
   dir_prefix: tg-          # SAVE_DIR_PREFIX, per_user mode only
   note: ""                 # SAVE_NOTE, appended to the "Saved" reply
+  notify: true             # SAVE_NOTIFY, reply when a saved meme becomes searchable
 
 access:
   save_user_ids: []        # SAVE_USER_IDS, e.g. [111111, 222222]; also trusted

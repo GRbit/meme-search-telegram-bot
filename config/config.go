@@ -136,6 +136,16 @@ var settings = []setting{
 	{env: "SAVE_NOTE", key: "saver.note",
 		set: func(c *Config, v string) error { c.Saver.Note = v; return nil },
 		get: func(c *Config) string { return c.Saver.Note }},
+	{env: "SAVE_NOTIFY", key: "saver.notify", field: "Saver.NoNotify", def: "true",
+		set: func(c *Config, v string) error {
+			on, err := strconv.ParseBool(v)
+			if err != nil {
+				return fmt.Errorf("must be true or false, got %q", v)
+			}
+			c.Saver.NoNotify = !on
+			return nil
+		},
+		get: func(c *Config) string { return strconv.FormatBool(!c.Saver.NoNotify) }},
 	{env: "SAVE_USER_IDS", key: "access.save_user_ids", field: "Access.SaveUserIDs",
 		set: func(c *Config, v string) error { return parseIDs(v, &c.Access.SaveUserIDs) },
 		get: func(c *Config) string { return formatIDs(c.Access.SaveUserIDs) }},
