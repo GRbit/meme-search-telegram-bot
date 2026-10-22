@@ -211,9 +211,11 @@ Then open the bot in Telegram and send `/start`.
   "Page 4 of 4+" says more exist. Public users stop at 20.
 - One search shows each picture once: when the same image sits in several library folders, only the best
   ranked copy is shown. A result counts as a copy of one shown earlier in the same search (any page, inline, or
-  the meme "Similar" started from) when it has the same file name, or when both names were written by the bot's
-  saver and carry the same content hash (`2026-10-18_alice_123_<20 hex>.jpg`). Different pictures that happen
-  to share a file name are hidden too, so give distinct files distinct names.
+  the meme "Similar" started from) when both file names carry the same content hash: a run of exactly 20 hex
+  characters (`0-9`, `a-f`, any case) between non-hex characters or the ends of the name. The bot's saver writes
+  such names (`2026-10-18_alice_123_<hash>.jpg`), and they still match after meme-search renames a clash
+  (`..._<hash>_1700000000.jpg`). Names without such a run, with a longer hex run, or with two different 20-hex
+  runs are never treated as copies, and equal file names alone do not count.
 - `/settings` sets your own search mode and tags, kept until you change them:
   - **Smart** (vector search, the default) finds memes by meaning, also across languages.
   - **Words** (keyword search) finds memes containing any word of the query; memes matching more words come
