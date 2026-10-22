@@ -262,7 +262,9 @@ type HTTPClient struct {
 	log             *slog.Logger
 	maxContentBytes int64
 	now             func() time.Time
-	caps            capState
+	// after is WatchCapabilities' sleep; tests drive it with a fake clock.
+	after func(time.Duration) (<-chan time.Time, func())
+	caps  capState
 }
 
 var _ Client = (*HTTPClient)(nil)
@@ -300,6 +302,7 @@ func New(cfg Config, httpClient *http.Client, log *slog.Logger) (*HTTPClient, er
 		log:             log,
 		maxContentBytes: MaxContentBytes,
 		now:             time.Now,
+		after:           afterTimer,
 	}, nil
 }
 
