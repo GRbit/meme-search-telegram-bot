@@ -14,8 +14,6 @@ import (
 	"time"
 )
 
-const testUploadToken = "ms_upload_secret_value"
-
 // fakeAPI imitates both server generations behind one URL: with old set it
 // routes like stock upstream v1 (search without the new meta fields, unknown
 // parameters silently ignored, every other route a plain-text 404 like Rails'
@@ -51,9 +49,9 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	return f
 }
 
-func (f *fakeAPI) client(t *testing.T, uploadToken string) *HTTPClient {
+func (f *fakeAPI) client(t *testing.T) *HTTPClient {
 	t.Helper()
-	c, err := New(Config{URL: f.srv.URL, Token: testToken, UploadToken: uploadToken, Timeout: 5 * time.Second}, nil, nil)
+	c, err := New(Config{URL: f.srv.URL, Token: testToken, Timeout: 5 * time.Second}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +213,7 @@ func (f *fakeAPI) serveNew(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *fakeAPI) serveUpload(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != "Bearer "+testUploadToken || !f.uploadScope.Load() {
+	if r.Header.Get("Authorization") != "Bearer "+testToken || !f.uploadScope.Load() {
 		writeJSON(w, http.StatusForbidden, `{"error":{"code":"forbidden","message":"This token does not grant media:write."}}`)
 		return
 	}

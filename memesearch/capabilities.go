@@ -20,7 +20,7 @@ type Capabilities struct {
 	Offset       bool // search applies offset (meta.offset)
 	Listing      bool // GET /api/v1/memes cursor listing and change feed
 	Similar      bool // GET /api/v1/memes/:id/similar
-	Upload       bool // POST /api/v2/memes, and the upload token may use it
+	Upload       bool // POST /api/v2/memes, and the API token has media:write
 	CheckedAt    time.Time
 }
 
@@ -91,7 +91,8 @@ func (c *HTTPClient) observeEndpoint(ctx context.Context, name string, field fun
 // It costs one request on each optional endpoint's own rate limit bucket and
 // two on the search bucket (one search, one similar), so run it at startup and
 // every few hours, not per user action. The upload check posts an empty form,
-// which the server rejects before storing anything.
+// which the server rejects before storing anything; 403 means the token lacks
+// media:write.
 func (c *HTTPClient) Probe(ctx context.Context) Capabilities {
 	c.log.DebugContext(ctx, "memesearch probe start")
 	_, err := c.Folders(ctx)
@@ -127,10 +128,6 @@ func (c *HTTPClient) Probe(ctx context.Context) Capabilities {
 
 func (c *HTTPClient) probeUpload(ctx context.Context) {
 	field := func(p *Capabilities) *bool { return &p.Upload }
-	if c.uploadToken == "" {
-		c.setCap(ctx, "upload", field, false)
-		return
-	}
 	_, err := c.upload(ctx, nil, UploadOptions{})
 	var apiErr *APIError
 	switch {
@@ -138,7 +135,8 @@ func (c *HTTPClient) probeUpload(ctx context.Context) {
 		// The empty form passed auth and scope and failed only file validation.
 		c.setCap(ctx, "upload", field, true)
 	case errors.As(err, &apiErr) && apiErr.Status == http.StatusForbidden:
-		c.log.WarnContext(ctx, "memesearch upload token lacks the media:write scope")
+		// A normal setup for a bot that only searches, so not a warning.
+		c.log.InfoContext(ctx, "memesearch uploads off: the API token lacks the media:write scope")
 		c.setCap(ctx, "upload", field, false)
 	default:
 		c.observeEndpoint(ctx, "upload", field, err)

@@ -482,15 +482,9 @@ func TestTableConsistency(t *testing.T) {
 	}
 }
 
-func TestUploadToken(t *testing.T) {
-	if c := mustLoad(t, required(), t.TempDir()); c.MemeSearch.UploadToken != "" {
-		t.Fatalf("default upload token = %q, want empty (uploads off)", c.MemeSearch.UploadToken)
-	}
-	c := mustLoad(t, env("MEME_SEARCH_UPLOAD_TOKEN=uploadsecretvalue"), t.TempDir())
-	if c.MemeSearch.UploadToken != "uploadsecretvalue" {
-		t.Fatalf("UploadToken = %q", c.MemeSearch.UploadToken)
-	}
-	if s := c.Summary(); strings.Contains(s, "uploadsecretvalue") || !strings.Contains(s, "MEME_SEARCH_UPLOAD_TOKEN=uplo...") {
-		t.Fatalf("summary:\n%s", s)
+// Uploads use MEME_SEARCH_API_TOKEN with media:write; there is no second token to configure.
+func TestNoSeparateUploadToken(t *testing.T) {
+	if s := mustLoad(t, required(), t.TempDir()).Summary(); strings.Contains(s, "UPLOAD_TOKEN") {
+		t.Fatalf("summary lists an upload token:\n%s", s)
 	}
 }

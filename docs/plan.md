@@ -284,7 +284,7 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   also 404s for an unknown meme. 5xx, 429, 401 and network errors keep the previous value. Search parameters are
   confirmed from `meta` on every search answer (`Page.Ignored`), so a downgrade is seen at once; the plain `Search`
   turns an ignored parameter into `ErrUnsupported` rather than return unfiltered memes. The upload probe posts an
-  empty form with `MEME_SEARCH_UPLOAD_TOKEN` (422 = usable, 403 = token lacks `media:write`); nothing is stored. The
+  empty form with the one API token (422 = usable, 403 = token lacks `media:write`, logged at Info); nothing is stored. The
   `Client` interface is unchanged so existing fakes stay valid; new endpoints are `HTTPClient` methods.
 - Folder filter (tasks 2.1): `search.Deps.Server` (defaults to `Deps.API` when it implements it) gives the newer
   endpoints; with it folders are always sent and `Page.Ignored` decides whether they applied, so an old server

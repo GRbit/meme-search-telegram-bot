@@ -15,7 +15,7 @@ import (
 
 func TestMemeOptionalFields(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, "")
+	c := f.client(t)
 	memes, err := c.Search(t.Context(), "cat", SearchOptions{Limit: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestDescriptionStatusUnknownIsPending(t *testing.T) {
 
 func TestSearchOmitsNewParamsByDefault(t *testing.T) {
 	f := newFakeAPI(t)
-	if _, err := f.client(t, "").Search(t.Context(), "cat", SearchOptions{Limit: 3, Tags: []string{"a"}}); err != nil {
+	if _, err := f.client(t).Search(t.Context(), "cat", SearchOptions{Limit: 3, Tags: []string{"a"}}); err != nil {
 		t.Fatal(err)
 	}
 	q, _ := url.ParseQuery(f.last().query)
@@ -62,7 +62,7 @@ func TestSearchOmitsNewParamsByDefault(t *testing.T) {
 
 func TestSearchPageNewServer(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, "")
+	c := f.client(t)
 	page, err := c.SearchPage(t.Context(), "cat", SearchOptions{
 		Mode: ModeVector, Limit: 20, Offset: 20, Tags: []string{"a", "b"},
 		Folders: []string{"tg-alice", "work/reactions"}, TagMatch: TagMatchAll,
@@ -93,7 +93,7 @@ func TestSearchPageNewServer(t *testing.T) {
 func TestSearchPageOldServerReportsIgnoredParams(t *testing.T) {
 	f := newFakeAPI(t)
 	f.old.Store(true)
-	c := f.client(t, "")
+	c := f.client(t)
 	page, err := c.SearchPage(t.Context(), "cat", SearchOptions{
 		Limit: 5, Offset: 5, Tags: []string{"a"}, Folders: []string{"x"}, TagMatch: TagMatchAll,
 	})
@@ -131,7 +131,7 @@ func TestSearchPageEchoMismatchIsIgnored(t *testing.T) {
 func TestSearchFailsWhenParamIgnored(t *testing.T) {
 	f := newFakeAPI(t)
 	f.old.Store(true)
-	_, err := f.client(t, "").Search(t.Context(), "cat", SearchOptions{Limit: 5, Folders: []string{"x"}})
+	_, err := f.client(t).Search(t.Context(), "cat", SearchOptions{Limit: 5, Folders: []string{"x"}})
 	if !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("err = %v, want ErrUnsupported", err)
 	}
@@ -164,7 +164,7 @@ func TestSearchValidatesNewOptions(t *testing.T) {
 
 func TestFoldersAndTags(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, "")
+	c := f.client(t)
 	folders, err := c.Folders(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestFoldersBadResponse(t *testing.T) {
 
 func TestListMemes(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, "")
+	c := f.client(t)
 	page, err := c.ListMemes(t.Context(), ListOptions{Limit: 2})
 	if err != nil {
 		t.Fatal(err)
@@ -253,7 +253,7 @@ func TestListMemesLocalValidation(t *testing.T) {
 
 func TestSimilar(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, "")
+	c := f.client(t)
 	memes, err := c.Similar(t.Context(), 42, 5)
 	if err != nil {
 		t.Fatal(err)
@@ -288,7 +288,7 @@ func TestSimilar(t *testing.T) {
 
 func TestUpload(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, testUploadToken)
+	c := f.client(t)
 	res, err := c.Upload(t.Context(), []UploadFile{
 		{Name: "a.jpg", Data: []byte("aaa")}, {Name: "b.png", Data: []byte("bbb")}, {Name: "c.webp", Data: []byte("ccc")},
 	}, UploadOptions{Folder: "tg-alice", GenerateDescription: true})
@@ -296,7 +296,7 @@ func TestUpload(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := f.last()
-	if r.method != http.MethodPost || r.path != "/api/v2/memes" || r.auth != "Bearer "+testUploadToken {
+	if r.method != http.MethodPost || r.path != "/api/v2/memes" || r.auth != "Bearer "+testToken {
 		t.Fatalf("request = %s %s auth=%q", r.method, r.path, r.auth)
 	}
 	if !slices.Equal(r.files, []string{"a.jpg", "b.png", "c.webp"}) ||
@@ -326,22 +326,26 @@ func TestUpload(t *testing.T) {
 
 func TestUploadUnsupported(t *testing.T) {
 	f := newFakeAPI(t)
-	n := len(f.requests())
-	if _, err := f.client(t, "").Upload(t.Context(), []UploadFile{{Name: "a.jpg", Data: []byte("a")}}, UploadOptions{}); !errors.Is(err, ErrUnsupported) {
-		t.Fatalf("no token err = %v", err)
-	}
-	if len(f.requests()) != n {
-		t.Fatal("upload without a token must not send a request")
-	}
 	f.old.Store(true)
-	if _, err := f.client(t, testUploadToken).Upload(t.Context(), []UploadFile{{Name: "a.jpg", Data: []byte("a")}}, UploadOptions{}); !errors.Is(err, ErrUnsupported) {
+	if _, err := f.client(t).Upload(t.Context(), []UploadFile{{Name: "a.jpg", Data: []byte("a")}}, UploadOptions{}); !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("old server err = %v", err)
+	}
+}
+
+// Without media:write on the one API token the server answers 403: not an
+// unsupported server, so the error stays a plain ErrForbidden.
+func TestUploadWithoutScope(t *testing.T) {
+	f := newFakeAPI(t)
+	f.uploadScope.Store(false)
+	_, err := f.client(t).Upload(t.Context(), []UploadFile{{Name: "a.jpg", Data: []byte("a")}}, UploadOptions{})
+	if !errors.Is(err, ErrForbidden) || errors.Is(err, ErrUnsupported) {
+		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestUploadLocalValidation(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, testUploadToken)
+	c := f.client(t)
 	eleven := make([]UploadFile, MaxUploadFiles+1)
 	for i := range eleven {
 		eleven[i] = UploadFile{Name: "a.jpg", Data: []byte("a")}
@@ -363,7 +367,7 @@ func TestUploadLocalValidation(t *testing.T) {
 
 func TestProbe(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, testUploadToken)
+	c := f.client(t)
 	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
 	c.now = func() time.Time { return now }
 	if got := c.Capabilities(); got != (Capabilities{}) {
@@ -390,24 +394,29 @@ func TestProbe(t *testing.T) {
 }
 
 func TestProbeUploadScope(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	f := newFakeAPI(t)
-	if c := f.client(t, ""); c.Probe(t.Context()).Upload {
-		t.Fatal("no upload token must mean no upload")
-	}
-	for _, r := range f.requests() {
-		if r.method == http.MethodPost {
-			t.Fatal("probe without an upload token must not POST")
-		}
-	}
 	f.uploadScope.Store(false)
-	if c := f.client(t, testUploadToken); c.Probe(t.Context()).Upload {
+	c, err := New(Config{URL: f.srv.URL, Token: testToken}, nil, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Probe(t.Context()).Upload {
 		t.Fatal("a token without media:write must mean no upload")
+	}
+	if !strings.Contains(buf.String(), "level=INFO") || !strings.Contains(buf.String(), "media:write") {
+		t.Fatalf("no info log about the missing scope:\n%s", buf.String())
+	}
+	f.uploadScope.Store(true)
+	if !c.Probe(t.Context()).Upload {
+		t.Fatal("scope granted later must turn uploads on")
 	}
 }
 
 func TestProbeKeepsValuesOnTransientErrors(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, testUploadToken)
+	c := f.client(t)
 	before := c.Probe(t.Context())
 	for _, s := range []int{http.StatusInternalServerError, http.StatusTooManyRequests, http.StatusUnauthorized} {
 		f.failStatus.Store(int32(s))
@@ -453,7 +462,7 @@ func TestSearchObservesCapabilities(t *testing.T) {
 
 func TestWatchCapabilitiesReprobes(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, "")
+	c := f.client(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
@@ -493,11 +502,11 @@ func TestStaticCapabilities(t *testing.T) {
 	var _ CapabilitySource = (*HTTPClient)(nil)
 }
 
-func TestNewLogsNeverContainUploadToken(t *testing.T) {
+func TestLogsNeverContainTokenOnNewEndpoints(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	f := newFakeAPI(t)
-	c, err := New(Config{URL: f.srv.URL, Token: testToken, UploadToken: testUploadToken}, nil, log)
+	c, err := New(Config{URL: f.srv.URL, Token: testToken}, nil, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,7 +514,7 @@ func TestNewLogsNeverContainUploadToken(t *testing.T) {
 	_, _ = c.Upload(t.Context(), []UploadFile{{Name: "a.jpg", Data: []byte("a")}}, UploadOptions{})
 	_, _ = c.ListMemes(t.Context(), ListOptions{})
 	_, _ = c.Similar(t.Context(), 1, 1)
-	if strings.Contains(buf.String(), testUploadToken) || strings.Contains(buf.String(), testToken) {
+	if strings.Contains(buf.String(), testToken) {
 		t.Fatal("token in logs")
 	}
 	if !strings.Contains(buf.String(), "path=/api/v2/memes") {
@@ -515,7 +524,7 @@ func TestNewLogsNeverContainUploadToken(t *testing.T) {
 
 func TestWatchCapabilitiesZeroIntervalUsesDefault(t *testing.T) {
 	f := newFakeAPI(t)
-	c := f.client(t, "")
+	c := f.client(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {

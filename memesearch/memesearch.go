@@ -153,14 +153,11 @@ type Client interface {
 
 // Config locates the API.
 type Config struct {
-	URL     string // base URL, e.g. https://memes.example.com
-	Token   string // bearer token with search:read and media:read
+	URL string // base URL, e.g. https://memes.example.com
+	// Token is the bearer token: search:read and media:read, plus media:write
+	// for Upload (optional).
+	Token   string
 	Timeout time.Duration
-	// UploadToken is a separate media:write token for Upload; empty disables uploads.
-	//
-	// Upstream asks for a separate token per purpose, and a leaked read token
-	// should not be able to write.
-	UploadToken string
 }
 
 // Sentinel errors matched with errors.Is; *APIError unwraps to one of them.
@@ -261,7 +258,6 @@ func (c Config) Validate() error {
 type HTTPClient struct {
 	base            string // scheme://host[/prefix] without trailing slash
 	token           string
-	uploadToken     string
 	hc              *http.Client
 	log             *slog.Logger
 	maxContentBytes int64
@@ -300,7 +296,6 @@ func New(cfg Config, httpClient *http.Client, log *slog.Logger) (*HTTPClient, er
 	return &HTTPClient{
 		base:            u.String(),
 		token:           cfg.Token,
-		uploadToken:     cfg.UploadToken,
 		hc:              httpClient,
 		log:             log,
 		maxContentBytes: MaxContentBytes,

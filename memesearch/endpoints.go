@@ -254,12 +254,9 @@ func similarEvidence(err error) error {
 	return err
 }
 
-// Upload stores images through API v2 with the upload token. Without an
-// upload token, or against an older server, it fails with ErrUnsupported.
+// Upload stores images through API v2. An older server fails with
+// ErrUnsupported; a token without media:write with ErrForbidden.
 func (c *HTTPClient) Upload(ctx context.Context, files []UploadFile, opts UploadOptions) (UploadResult, error) {
-	if c.uploadToken == "" {
-		return UploadResult{}, fmt.Errorf("%w: no upload token configured", ErrUnsupported)
-	}
 	if len(files) < 1 || len(files) > MaxUploadFiles {
 		return UploadResult{}, fmt.Errorf("%w: %d files outside 1..%d", ErrInvalidRequest, len(files), MaxUploadFiles)
 	}
@@ -300,7 +297,7 @@ func (c *HTTPClient) upload(ctx context.Context, files []UploadFile, opts Upload
 
 	var body uploadResponse
 	status := 0
-	resp, err := c.do(ctx, http.MethodPost, path, nil, &buf, mw.FormDataContentType(), "application/json", c.uploadToken)
+	resp, err := c.do(ctx, http.MethodPost, path, nil, &buf, mw.FormDataContentType(), "application/json", c.token)
 	if err == nil {
 		status, err = decodeJSON(resp, path, &body)
 	}

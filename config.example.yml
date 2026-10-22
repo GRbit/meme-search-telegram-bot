@@ -8,8 +8,7 @@ telegram:
 
 meme_search:
   url: ""                  # MEME_SEARCH_URL, required, e.g. http://meme_search:3000
-  api_token: ""            # MEME_SEARCH_API_TOKEN, required, scopes search:read,media:read
-  upload_token: ""         # MEME_SEARCH_UPLOAD_TOKEN, optional, scope media:write (API v2 uploads, newer servers)
+  api_token: ""            # MEME_SEARCH_API_TOKEN, required, scopes search:read,media:read (+ media:write for uploads)
   timeout: 30s             # MEME_SEARCH_TIMEOUT, request timeout to the meme-search API
 
 search:

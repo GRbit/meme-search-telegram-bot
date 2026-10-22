@@ -118,7 +118,9 @@ Without `CACHE_CHAT_ID` private chat search works the same way, but inline mode 
 ### 2. Create a meme-search API token
 
 In meme-search open **Settings -> API tokens**, create a token named e.g. `telegram-bot` with the scopes
-`search:read` and `media:read`. Copy it right away (it is shown once): it is `MEME_SEARCH_API_TOKEN`.
+`search:read` and `media:read`. Copy it right away (it is shown once): it is `MEME_SEARCH_API_TOKEN`. On newer
+meme-search versions you may also tick `media:write`, which lets the bot upload memes through API v2; without it
+the bot logs once per check that uploads are off.
 
 ### 3. Create the cache channel (for inline mode)
 
@@ -243,8 +245,7 @@ environment variables count as unset. Durations use Go syntax (`10s`, `5m`, `6h`
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | required | Bot token from @BotFather |
 | `MEME_SEARCH_URL` | required | Base URL of meme-search, e.g. `http://meme_search:3000` |
-| `MEME_SEARCH_API_TOKEN` | required | API token with `search:read,media:read` |
-| `MEME_SEARCH_UPLOAD_TOKEN` | empty | Separate token with `media:write` for uploads through API v2 (newer meme-search only); empty means no uploads |
+| `MEME_SEARCH_API_TOKEN` | required | API token with `search:read,media:read`; add `media:write` to allow uploads (newer meme-search only) |
 | `MEME_SEARCH_TIMEOUT` | `30s` | Timeout of one API request |
 | `RESULTS_PER_PAGE` | `5` | Memes per page in private chat, 1-10 |
 | `SEARCH_MODE` | `vector` | `vector` (semantic) or `keyword` |
