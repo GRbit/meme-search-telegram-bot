@@ -17,12 +17,20 @@ type scope struct {
 	// search with them. When false the search ran everywhere and the user is told.
 	folders        []string
 	foldersApplied bool
+	// tagMatch all is sent only to a Server; tagMatchApplied says the last
+	// search confirmed it, otherwise memes with any of the tags were searched.
+	tagMatch        memesearch.TagMatch
+	tagMatchApplied bool
 }
+
+// wantsAllTags reports whether "all of these tags" makes a difference.
+func (sc scope) wantsAllTags() bool { return sc.tagMatch == memesearch.TagMatchAll && len(sc.tags) > 1 }
 
 // privateScope applies a query's overrides on top of the user's settings,
 // per dimension: #tags replace saved tags, dir: replaces saved folders.
 func (m *Module) privateScope(p prefs, o overrides) scope {
-	sc := scope{mode: m.effectiveMode(p), tags: p.Tags, folders: p.Folders}
+	// The user's way of combining tags also applies to tags typed in the query.
+	sc := scope{mode: m.effectiveMode(p), tags: p.Tags, folders: p.Folders, tagMatch: p.TagMatch}
 	if len(o.tags) > 0 {
 		sc.tags = o.tags
 	}
@@ -53,7 +61,10 @@ func (m *Module) describeScope(loc *i18n.Localizer, sc scope) string {
 	if sc.mode != m.cfg.Mode {
 		parts = append(parts, modeName(loc, sc.mode))
 	}
-	if len(sc.tags) > 0 {
+	switch {
+	case sc.wantsAllTags() && sc.tagMatchApplied:
+		parts = append(parts, loc.T("search.scope_tags_all", map[string]any{"Tags": strings.Join(sc.tags, ", ")}))
+	case len(sc.tags) > 0:
 		parts = append(parts, loc.T("search.scope_tags", map[string]any{"Tags": strings.Join(sc.tags, ", ")}))
 	}
 	if len(sc.folders) > 0 {
@@ -75,14 +86,20 @@ func (m *Module) inlineScope(p prefs, o overrides, g *groupScope, chatType strin
 	if g != nil {
 		layers = append(layers, overrides{tags: g.tags, folders: g.folders})
 	}
+	userLayer := len(layers)
 	layers = append(layers, overrides{tags: p.Tags, folders: p.Folders})
 	if isGroupChatType(chatType) {
 		layers = append(layers, m.groupDefault)
 	}
 	sc := scope{mode: m.cfg.Mode}
-	for _, l := range layers {
+	for i, l := range layers {
 		if len(l.tags) > 0 {
 			sc.tags = l.tags
+			// A group's or the host's tags were chosen to be matched any-of; the user's
+			// own setting applies to their own tags only.
+			if i == 0 || i == userLayer {
+				sc.tagMatch = p.TagMatch
+			}
 			break
 		}
 	}

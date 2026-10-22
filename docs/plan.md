@@ -294,3 +294,8 @@ identifiers get doc comments, other comments explain why, not what; slog debug l
   grid). The folder list is cached 5 minutes and a failed refresh keeps the stale list. Picker buttons carry the
   list index plus an FNV hash of the name: names can be 300 characters, callback data 64 bytes, and a changed list
   must not select the wrong folder. "Only mine" needs `Deps.OwnFolder`, which the host does not wire yet.
+- Tag picker (tasks 2.2): the folder picker became a generic `picker` (folders, tags) over a 5-minute list cache.
+  "All tags" is stored as `search_prefs.tag_match` (migration step 3) and forgotten when the tags are cleared. It
+  applies to the user's own tags, saved or typed as `#tag`, and is offered only with two or more tags on a server
+  with `tag_match`. A group's tags and `INLINE_GROUP_SCOPE` stay any-of. An ignored `tag_match` (old server)
+  gives a Warn log and a note under the results, like folders.

@@ -483,6 +483,8 @@ type fakeServer struct {
 	// ignore is reported as Page.Ignored on every SearchPage, like an older server.
 	ignore      []memesearch.Param
 	folderCalls int
+	tags        []memesearch.Tag
+	tagCalls    int
 }
 
 func newServer(api *fakeAPI, folders ...string) *fakeServer {
@@ -517,7 +519,22 @@ func (s *fakeServer) Folders(context.Context) ([]memesearch.Folder, error) {
 }
 
 func (s *fakeServer) Tags(context.Context) ([]memesearch.Tag, error) {
-	return nil, memesearch.ErrUnsupported
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tagCalls++
+	if !s.caps.TagList {
+		return nil, memesearch.ErrUnsupported
+	}
+	return s.tags, nil
+}
+
+// withTags turns on the tag list and tag_match and serves names with counts 1, 2, ...
+func (s *fakeServer) withTags(names ...string) *fakeServer {
+	s.caps.TagList, s.caps.TagMatch = true, true
+	for i, n := range names {
+		s.tags = append(s.tags, memesearch.Tag{Name: n, MemeCount: i + 1})
+	}
+	return s
 }
 
 func (s *fakeServer) Similar(context.Context, int64, int) ([]memesearch.Meme, error) {

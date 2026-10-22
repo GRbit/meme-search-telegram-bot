@@ -163,6 +163,7 @@ type Module struct {
 	srv    Server // nil on a stock server
 	// folderList caches the server's folders for pickers and dir: checks.
 	folderList listCache[memesearch.Folder]
+	tagList    listCache[memesearch.Tag]
 	// groupDefault is Config.InlineGroupScope parsed once.
 	groupDefault overrides
 }

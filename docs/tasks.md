@@ -79,6 +79,9 @@ to export its folder naming), and the mediacache part (another agent).
 
 ### 2.2 Tag picker (needs E)
 
+Done for `/settings`: "Pick tags" from the list, "Any tag"/"All tags". `/memescope` gets its picker with folders
+(step 6 of the part 2 order); until then admins type `#tags`, matched any-of.
+
 `/settings` and `/memescope` pick tags from `GET /api/v1/tags`; optional "all of these tags" via `tag_match=all`.
 
 ### 2.3 Listing and change feed (needs G)

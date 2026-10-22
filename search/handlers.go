@@ -202,6 +202,9 @@ func (m *Module) sendPage(ctx context.Context, b *bot.Bot, loc *i18n.Localizer, 
 		if len(s.scope.folders) > 0 && !s.scope.foldersApplied {
 			lines = append([]string{loc.T("search.folders_unsupported", nil)}, lines...)
 		}
+		if s.scope.wantsAllTags() && !s.scope.tagMatchApplied {
+			lines = append([]string{loc.T("search.tag_match_unsupported", nil)}, lines...)
+		}
 		if !m.isDefaultScope(s.scope) {
 			lines = append([]string{loc.T("search.scope_line", map[string]any{"Scope": m.describeScope(loc, s.scope)})}, lines...)
 		}

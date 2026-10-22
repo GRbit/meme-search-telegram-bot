@@ -47,7 +47,10 @@ func (m *Module) foldersOffered(p prefs) (line, button bool) {
 func (m *Module) settingsView(loc *i18n.Localizer, p prefs) (string, *models.InlineKeyboardMarkup) {
 	mode := m.effectiveMode(p)
 	tags := loc.T("search.tags_none", nil)
-	if len(p.Tags) > 0 {
+	switch {
+	case len(p.Tags) > 1 && p.TagMatch == memesearch.TagMatchAll:
+		tags = loc.T("search.tags_all_of", map[string]any{"Tags": strings.Join(p.Tags, ", ")})
+	case len(p.Tags) > 0:
 		tags = strings.Join(p.Tags, ", ")
 	}
 	folderLine, folderButton := m.foldersOffered(p)
@@ -65,10 +68,25 @@ func (m *Module) settingsView(loc *i18n.Localizer, p prefs) (string, *models.Inl
 		return models.InlineKeyboardButton{Text: name, CallbackData: settingsPrefix + "mode:" + string(md)}
 	}
 	tagRow := []models.InlineKeyboardButton{{Text: loc.T("search.settings_set_tags", nil), CallbackData: settingsPrefix + "tags"}}
+	if m.caps().TagList {
+		tagRow = append(tagRow, models.InlineKeyboardButton{Text: loc.T("search.settings_pick_tags", nil), CallbackData: tagPrefix + "p:0"})
+	}
 	if len(p.Tags) > 0 {
 		tagRow = append(tagRow, models.InlineKeyboardButton{Text: loc.T("search.settings_clear_tags", nil), CallbackData: settingsPrefix + "clear"})
 	}
 	rows := [][]models.InlineKeyboardButton{{modeBtn(memesearch.ModeVector), modeBtn(memesearch.ModeKeyword)}, tagRow}
+	if m.tagMatchOffered(p) {
+		matchBtn := func(tm memesearch.TagMatch, id string) models.InlineKeyboardButton {
+			name := loc.T(id, nil)
+			if (p.TagMatch == memesearch.TagMatchAll) == (tm == memesearch.TagMatchAll) {
+				name = loc.T("search.settings_selected", map[string]any{"Name": name})
+			}
+			return models.InlineKeyboardButton{Text: name, CallbackData: settingsPrefix + "match:" + string(tm)}
+		}
+		rows = append(rows, []models.InlineKeyboardButton{
+			matchBtn(memesearch.TagMatchAny, "search.settings_match_any"), matchBtn(memesearch.TagMatchAll, "search.settings_match_all"),
+		})
+	}
 	if folderButton {
 		rows = append(rows, []models.InlineKeyboardButton{{Text: loc.T("search.settings_folders", nil), CallbackData: folderPrefix + "p:0"}})
 	}
@@ -93,8 +111,12 @@ func (m *Module) effectiveMode(p prefs) memesearch.Mode {
 // handleSettingsCallback applies one settings button. Settings changes are
 // free: the access middleware charges only searches.
 func (m *Module) handleSettingsCallback(ctx context.Context, b *bot.Bot, cq *models.CallbackQuery) {
-	if strings.HasPrefix(cq.Data, folderPrefix) {
-		m.handleFolderCallback(ctx, b, cq)
+	switch {
+	case strings.HasPrefix(cq.Data, folderPrefix):
+		m.handlePicker(ctx, b, cq, m.folderPicker())
+		return
+	case strings.HasPrefix(cq.Data, tagPrefix):
+		m.handlePicker(ctx, b, cq, m.tagPicker())
 		return
 	}
 	user := cq.From.ID
@@ -117,6 +139,17 @@ func (m *Module) handleSettingsCallback(ctx context.Context, b *bot.Bot, cq *mod
 		p.Tags = nil
 	case action == "reset":
 		p = prefs{}
+	case strings.HasPrefix(action, "match:"):
+		switch memesearch.TagMatch(strings.TrimPrefix(action, "match:")) {
+		case memesearch.TagMatchAny:
+			p.TagMatch = ""
+		case memesearch.TagMatchAll:
+			p.TagMatch = memesearch.TagMatchAll
+		default:
+			m.log.DebugContext(ctx, "search: unknown tag match ignored", "user_id", user, "action", action)
+			m.answerCallback(ctx, b, cq.ID, "")
+			return
+		}
 	case strings.HasPrefix(action, "mode:"):
 		md := memesearch.Mode(strings.TrimPrefix(action, "mode:"))
 		if md != memesearch.ModeVector && md != memesearch.ModeKeyword {

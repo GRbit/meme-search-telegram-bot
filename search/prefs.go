@@ -30,29 +30,30 @@ var migrations = []string{
 		set_by INTEGER NOT NULL,
 		updated_at INTEGER NOT NULL
 	)`,
+	`ALTER TABLE search_prefs ADD COLUMN tag_match TEXT NOT NULL DEFAULT ''`,
 }
 
 // prefs are one user's saved search settings. Zero values mean the host's
 // defaults, so a user who never opened /settings searches as before.
 type prefs struct {
-	Mode memesearch.Mode // "" means Config.Mode
-	Tags []string
-	// Folders are stored for the upstream folder filter; the API cannot
-	// filter by folder yet, so they are never sent.
+	Mode    memesearch.Mode // "" means Config.Mode
+	Tags    []string
 	Folders []string
+	// TagMatch is "" (any tag) or memesearch.TagMatchAll; it means nothing without tags.
+	TagMatch memesearch.TagMatch
 }
 
 func (p prefs) isZero() bool {
-	return p.Mode == "" && len(p.Tags) == 0 && len(p.Folders) == 0
+	return p.Mode == "" && len(p.Tags) == 0 && len(p.Folders) == 0 && p.TagMatch == ""
 }
 
 // loadPrefs returns the user's settings. A read error means defaults: a
 // broken settings table must not take search down.
 func (m *Module) loadPrefs(ctx context.Context, user int64) prefs {
 	var p prefs
-	var mode, tags, folders string
+	var mode, tags, folders, tagMatch string
 	err := m.deps.DB.QueryRowContext(ctx,
-		`SELECT mode, tags, folders FROM search_prefs WHERE user_id = ?`, user).Scan(&mode, &tags, &folders)
+		`SELECT mode, tags, folders, tag_match FROM search_prefs WHERE user_id = ?`, user).Scan(&mode, &tags, &folders, &tagMatch)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return p
@@ -61,6 +62,7 @@ func (m *Module) loadPrefs(ctx context.Context, user int64) prefs {
 		return p
 	}
 	p.Mode = memesearch.Mode(mode)
+	p.TagMatch = memesearch.TagMatch(tagMatch)
 	if err := json.Unmarshal([]byte(tags), &p.Tags); err != nil {
 		m.log.WarnContext(ctx, "search: stored tags unreadable, ignoring", "user_id", user, "err", err)
 	}
@@ -72,6 +74,10 @@ func (m *Module) loadPrefs(ctx context.Context, user int64) prefs {
 
 // savePrefs stores p; settings equal to the defaults delete the row.
 func (m *Module) savePrefs(ctx context.Context, user int64, p prefs) error {
+	if len(p.Tags) == 0 {
+		// Forgotten with the tags, so cleared tags plus defaults still delete the row.
+		p.TagMatch = ""
+	}
 	if p.isZero() {
 		return store.WriteTx(ctx, m.deps.DB, func(tx *sql.Tx) error {
 			_, err := tx.ExecContext(ctx, `DELETE FROM search_prefs WHERE user_id = ?`, user)
@@ -87,11 +93,11 @@ func (m *Module) savePrefs(ctx context.Context, user int64, p prefs) error {
 		return err
 	}
 	return store.WriteTx(ctx, m.deps.DB, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `INSERT INTO search_prefs (user_id, mode, tags, folders, updated_at)
-			VALUES (?, ?, ?, ?, ?)
+		_, err := tx.ExecContext(ctx, `INSERT INTO search_prefs (user_id, mode, tags, folders, tag_match, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT (user_id) DO UPDATE SET mode = excluded.mode, tags = excluded.tags,
-				folders = excluded.folders, updated_at = excluded.updated_at`,
-			user, string(p.Mode), string(tags), string(folders), m.now().Unix())
+				folders = excluded.folders, tag_match = excluded.tag_match, updated_at = excluded.updated_at`,
+			user, string(p.Mode), string(tags), string(folders), string(p.TagMatch), m.now().Unix())
 		if err != nil {
 			return fmt.Errorf("search: save settings: %w", err)
 		}

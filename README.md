@@ -195,8 +195,9 @@ Then open the bot in Telegram and send `/start`.
   - **Smart** (vector search, the default) finds memes by meaning, also across languages.
   - **Words** (keyword search) finds memes containing any word of the query; memes matching more words come
     first.
-  - **Tags** limit search to memes having any of the given tags (at most 10, as meme-search allows). Until
-    meme-search can list its tags, type them separated by commas.
+  - **Tags** limit search to memes having any of the given tags (at most 10, as meme-search allows). Type them
+    separated by commas, or, when meme-search can list its tags (newer versions), "Pick tags" from the list. With
+    two or more tags and a meme-search that supports it, "All tags" finds only memes having every one of them.
   - **Folders** (only when meme-search can list its folders, newer versions) limit search to the chosen library
     folders, at most 10; "Only mine" picks your own save folder, "All folders" drops the limit.
   - **Reset** returns to the defaults. Changing settings never counts against the daily limit.
