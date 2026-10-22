@@ -86,12 +86,15 @@ func (c Config) Validate() error {
 	if o := parseOverrides(c.InlineGroupScope); o.query != "" {
 		errs = append(errs, &configerr.Field{Name: "InlineGroupScope",
 			Reason: fmt.Sprintf("must hold only #tag and dir:folder filters, found %q", o.query)})
-	} else if tagProblemOf(o.tags) != tagsOK {
-		errs = append(errs, &configerr.Field{Name: "InlineGroupScope",
-			Reason: fmt.Sprintf("at most %d tags of at most %d characters", memesearch.MaxTags, memesearch.MaxTagLen)})
-	} else if !foldersOK(o.folders) {
-		errs = append(errs, &configerr.Field{Name: "InlineGroupScope",
-			Reason: fmt.Sprintf("at most %d folders of at most %d characters", memesearch.MaxFolders, memesearch.MaxFolderLen)})
+	} else {
+		switch o.limitProblem() {
+		case tagsTooMany, tagsTooLong:
+			errs = append(errs, &configerr.Field{Name: "InlineGroupScope",
+				Reason: fmt.Sprintf("at most %d tags of at most %d characters", memesearch.MaxTags, memesearch.MaxTagLen)})
+		case foldersTooMany:
+			errs = append(errs, &configerr.Field{Name: "InlineGroupScope",
+				Reason: fmt.Sprintf("at most %d folders of at most %d characters", memesearch.MaxFolders, memesearch.MaxFolderLen)})
+		}
 	}
 	if c.InlineResults < 0 || c.InlineResults > memesearch.MaxLimit {
 		errs = append(errs, &configerr.Field{Name: "InlineResults", Reason: fmt.Sprintf("must be 1..%d (0 means %d)", memesearch.MaxLimit, defaultInlineResults)})
@@ -284,18 +287,17 @@ func (m *Module) Register(b *bot.Bot) {
 // "Search everywhere" rerun, but not paging or settings. Hosts pass it to
 // access.Access.Middleware.
 //
-// It mirrors the handlers' own checks, so blank or over-long queries, which
-// never reach the API, are not charged.
+// It calls the handlers' own rule (overrides.searchable), so blank or
+// over-long queries and filters over the API limits, which never reach the
+// API, are not charged.
 func Chargeable(u *models.Update) bool {
 	switch {
 	case isTextSearch(u):
-		o := parseOverrides(u.Message.Text)
-		_, ok := searchQuery(o.query)
-		return ok && tagProblemOf(o.tags) == tagsOK && foldersOK(o.folders)
+		_, ok := parseOverrides(u.Message.Text).searchable()
+		return ok
 	case isInline(u):
-		o := parseOverrides(u.InlineQuery.Query)
-		_, ok := searchQuery(o.query)
-		return ok && tagProblemOf(o.tags) == tagsOK && foldersOK(o.folders)
+		_, ok := parseOverrides(u.InlineQuery.Query).searchable()
+		return ok
 	case u.CallbackQuery != nil:
 		d := u.CallbackQuery.Data
 		return strings.HasPrefix(d, everywherePrefix) || strings.HasPrefix(d, similarPrefix)

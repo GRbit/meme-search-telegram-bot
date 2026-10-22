@@ -116,27 +116,11 @@ func (m *Module) handleText(ctx context.Context, b *bot.Bot, u *models.Update) {
 		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.query_too_long", map[string]any{"Max": memesearch.MaxQueryLen}), nil)
 		return
 	}
-	switch tagProblemOf(o.tags) {
-	case tagsTooMany:
-		m.log.DebugContext(ctx, "search: too many tags in query", "user_id", user, "count", len(o.tags))
-		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.query_tags_too_many", map[string]any{"Max": memesearch.MaxTags}), nil)
-		return
-	case tagsTooLong:
-		m.log.DebugContext(ctx, "search: tag too long in query", "user_id", user)
-		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.query_tag_too_long",
-			map[string]any{"Tag": longestTag(o.tags), "Len": memesearch.MaxTagLen}), nil)
-		return
-	}
-	if !foldersOK(o.folders) {
-		m.log.DebugContext(ctx, "search: too many or too long folders in query", "user_id", user, "count", len(o.folders))
-		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.query_folders_too_many",
-			map[string]any{"Max": memesearch.MaxFolders, "Len": memesearch.MaxFolderLen}), nil)
-		return
-	}
-	folders, unknown := m.resolveFolders(ctx, o.folders)
-	if len(unknown) > 0 {
-		m.log.DebugContext(ctx, "search: unknown folder in query", "user_id", user, "folders", unknown)
-		m.sendText(ctx, b, msg.Chat.ID, loc.T("search.folder_unknown", map[string]any{"Folders": strings.Join(unknown, ", ")}), nil)
+	folders, key, data, reason := m.acceptFilters(ctx, o)
+	if key != "" {
+		m.log.DebugContext(ctx, "search: query filters refused", "user_id", user, "reason", reason,
+			"tags", len(o.tags), "folders", o.folders)
+		m.sendText(ctx, b, msg.Chat.ID, loc.T(key, data), nil)
 		return
 	}
 	o.folders = folders
@@ -445,8 +429,7 @@ func (m *Module) handleInline(ctx context.Context, b *bot.Bot, u *models.Update)
 	iq := u.InlineQuery
 	user := iq.From.ID
 	o := parseOverrides(iq.Query)
-	q, ok := searchQuery(o.query)
-	ok = ok && tagProblemOf(o.tags) == tagsOK && foldersOK(o.folders)
+	q, ok := o.searchable()
 	m.log.DebugContext(ctx, "search: inline", "update", "inline_query", "user_id", user, "query", q,
 		"query_len", utf8.RuneCountInString(q), "chat_type", iq.ChatType, "tags", o.tags, "folders", o.folders)
 	// Telegram sends a query per keystroke; only the one the user stopped at

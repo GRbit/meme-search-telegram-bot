@@ -230,17 +230,19 @@ func (m *Module) handlePendingInput(ctx context.Context, b *bot.Bot, u *models.U
 	m.sendText(ctx, b, msg.Chat.ID, text, kb)
 }
 
-type tagProblem int
+// filterProblem says why typed filters cannot go to the API as they are.
+type filterProblem int
 
 const (
-	tagsOK tagProblem = iota
+	filtersOK filterProblem = iota
 	tagsTooMany
 	tagsTooLong
+	foldersTooMany // too many or too long dir: names
 )
 
 // parseTagList splits a comma separated list, dropping a leading "#",
 // blanks and repeats. Commas separate because tags may contain spaces.
-func parseTagList(text string) ([]string, tagProblem) {
+func parseTagList(text string) ([]string, filterProblem) {
 	var out []string
 	seen := map[string]bool{}
 	for _, part := range strings.Split(text, ",") {

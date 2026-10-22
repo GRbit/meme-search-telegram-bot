@@ -86,12 +86,7 @@ func (m *Module) refuseUnknownFolders(next bot.HandlerFunc) bot.HandlerFunc {
 			next(ctx, b, u)
 			return
 		}
-		var unknown []string
-		for _, f := range o.folders {
-			if _, found := matchFolder(list, f); !found {
-				unknown = append(unknown, f)
-			}
-		}
+		_, unknown := matchFolders(list, o.folders)
 		if len(unknown) == 0 {
 			next(ctx, b, u)
 			return
@@ -128,6 +123,12 @@ func (m *Module) resolveFolders(ctx context.Context, typed []string) (exact, unk
 	if !ok {
 		return typed, nil
 	}
+	return matchFolders(list, typed)
+}
+
+// matchFolders maps typed names to list's exact names and collects those
+// without a match.
+func matchFolders(list []memesearch.Folder, typed []string) (exact, unknown []string) {
 	for _, t := range typed {
 		name, found := matchFolder(list, t)
 		if !found {
@@ -137,6 +138,22 @@ func (m *Module) resolveFolders(ctx context.Context, typed []string) (exact, unk
 		exact = appendNew(exact, name)
 	}
 	return exact, unknown
+}
+
+// acceptFilters checks o's typed filters for a search or a group scope: the
+// API limits, then the folder names against the server's list. On success it
+// returns the exact folder names; otherwise the refusal as a message id with
+// its data, and a short reason for the caller's debug line.
+func (m *Module) acceptFilters(ctx context.Context, o overrides) (folders []string, key string, data map[string]any, reason string) {
+	if p := o.limitProblem(); p != filtersOK {
+		key, data = o.limitMessage(p)
+		return nil, key, data, "filters over the API limits"
+	}
+	folders, unknown := m.resolveFolders(ctx, o.folders)
+	if len(unknown) > 0 {
+		return nil, "search.folder_unknown", map[string]any{"Folders": strings.Join(unknown, ", ")}, "unknown folder"
+	}
+	return folders, "", nil, ""
 }
 
 // matchFolder prefers an exact match and falls back to a unique
