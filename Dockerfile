@@ -1,6 +1,6 @@
 # --- STAGE 1: build ---
 # Runs on the builder's native platform and cross-compiles: the sqlite driver is pure Go,
-# so arm64 images do not need QEMU emulation.
+# so the compile needs no QEMU emulation. The runtime stage below still does for a foreign platform.
 FROM --platform=$BUILDPLATFORM golang:1.27-bookworm AS builder
 
 ARG TARGETOS
